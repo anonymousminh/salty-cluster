@@ -14,7 +14,8 @@
     "seed": "pnpm --filter @meetspace/api seed",
     "smoke": "pnpm --filter @meetspace/api smoke",
     "simulate": "pnpm --filter @meetspace/api simulate",
-    "venue:validate": "pnpm --filter @meetspace/venue validate"
+    "venue:validate": "pnpm --filter @meetspace/venue validate",
+    "cluster": "bash deploy/deploy.sh"
   },
   "packageManager": "pnpm@11.18.0"
 }

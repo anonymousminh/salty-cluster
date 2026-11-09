@@ -1,0 +1,24 @@
+# Argo CD Application for the Cloud Native Hackathon cluster. Its Argo CD only picks up
+# Applications in team-* namespaces, with project team-<team>, and reads this public repo
+# without credentials. Applied by ./deploy/deploy.sh app (or by your agent through Radar's MCP).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+  namespace: team-salty-cluster
+spec:
+  project: team-salty-cluster
+  source:
+    repoURL: https://github.com/anonymousminh/salty-cluster.git
+    targetRevision: main
+    path: deploy/cnh
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: team-salty-cluster
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 3
+      backoff: { duration: 10s, factor: 2, maxDuration: 2m }

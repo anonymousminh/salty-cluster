@@ -28,7 +28,7 @@ import {
 import type { FastifyBaseLogger } from 'fastify';
 import type { Es } from './es/client';
 import { GAME_DOC_ID, IDX } from './es/indices';
-import { allBoothsQuery, boothsInZoneQuery, leaderboardQuery, organizerStatsQuery, playerCheckinsQuery, visitsPerBoothQuery } from './es/queries';
+import { allBoothsQuery, boothsInZoneQuery, leaderboardQuery, organizerStatsQuery, visitsPerBoothQuery } from './es/queries';
 import { HttpError, isEsStatus } from './lib/errors';
 import { hashPlayerId, newPlayerId, safeEqual } from './lib/ids';
 import { checkinsCounter, checkinsRejected, circleChanges, gauges, playersJoined, pointsHistogram, setSpanAttributes, withSpan } from './lib/telemetry';
@@ -98,6 +98,11 @@ export class GameService {
   // ---------- Game state (circle, rounds) ----------
 
   /**
+   * Writes never wait for a refresh: everything read right after a write is read by id, which is
+   * real-time in Elasticsearch (game state, players, the check-in create conflict). Searches
+   * (stats, leaderboard) may lag by one refresh interval, which the 3 s client polling absorbs.
+   * This matters on Elastic Cloud Serverless, where refreshes are slower than on hosted clusters.
+   *
    * Current game state. If a scheduled shrink is due, apply it first. Several API
    * replicas may notice at once, so the write uses optimistic concurrency
    * (if_seq_no / if_primary_term): exactly one wins, the others get 409 and re-read.
@@ -117,7 +122,7 @@ export class GameService {
         updatedAt: new Date(now).toISOString(),
       };
       try {
-        await this.es.index({ index: IDX.game, id: GAME_DOC_ID, document: stateDoc(next), if_seq_no: seqNo, if_primary_term: primaryTerm, refresh: 'wait_for' });
+        await this.es.index({ index: IDX.game, id: GAME_DOC_ID, document: stateDoc(next), if_seq_no: seqNo, if_primary_term: primaryTerm });
         circleChanges.add(1, { kind: 'scheduled_shrink' });
         gauges.radiusM = next.circle.radius;
         this.log.info({ event: 'circle.shrunk', scheduled: true, from_m: state.circle.radius, to_m: next.circle.radius, round: next.round }, 'scheduled shrink applied');
@@ -145,7 +150,7 @@ export class GameService {
 
   private async saveState(state: GameState): Promise<GameState> {
     const next = { ...state, updatedAt: new Date().toISOString() };
-    await this.es.index({ index: IDX.game, id: GAME_DOC_ID, document: stateDoc(next), refresh: 'wait_for' });
+    await this.es.index({ index: IDX.game, id: GAME_DOC_ID, document: stateDoc(next) });
     gauges.radiusM = next.circle.radius;
     return next;
   }
@@ -202,7 +207,6 @@ export class GameService {
         show_on_leaderboard: req.showOnLeaderboard ?? true,
         created_at: new Date().toISOString(),
       },
-      refresh: 'wait_for',
     });
     playersJoined.add(1);
     this.log.info({ event: 'player.joined' }, 'player joined');
@@ -240,19 +244,29 @@ export class GameService {
     return { entries, ...(myIndex >= 0 ? { me: toEntry(buckets[myIndex]!, myIndex) } : {}) };
   }
 
+  /**
+   * A player's own check-ins, read in real time: their ids are predictable (`playerHash:boothId`),
+   * so one mget returns them without waiting for a refresh (unlike a search).
+   */
+  private async myCheckins(playerHash: string, boothIds: string[]): Promise<{ boothId: string; xp: number }[]> {
+    if (!boothIds.length) return [];
+    const res = (await this.es.mget({ index: IDX.checkins, ids: boothIds.map((id) => `${playerHash}:${id}`) } as never)) as unknown as {
+      docs: { found?: boolean; _source?: { booth_id: string; xp: number } }[];
+    };
+    return res.docs.flatMap((d) => (d.found && d._source ? [{ boothId: d._source.booth_id, xp: d._source.xp }] : []));
+  }
+
   async progress(sessionId: string): Promise<Progress> {
     await this.player(sessionId);
     const me = this.hash(sessionId);
-    const [res, buckets, booths] = await Promise.all([
-      this.es.search({ index: IDX.checkins, ...playerCheckinsQuery(me) } as never) as unknown as Promise<SearchRes<{ booth_id: string }>>,
-      this.ranking(),
-      this.storedBooths(),
-    ]);
+    const [booths, buckets] = await Promise.all([this.storedBooths(), this.ranking()]);
+    const mine = await this.myCheckins(me, booths.map((b) => b.id));
     const rank = buckets.findIndex((b) => b.key === me);
     return {
-      xp: (res.aggregations?.xp as { value?: number } | undefined)?.value ?? 0,
+      xp: mine.reduce((a, c) => a + c.xp, 0),
+      // The ranking is a search, so it may lag a fresh check-in by one refresh interval.
       rank: rank >= 0 ? rank + 1 : buckets.length + 1,
-      visitedBoothIds: res.hits.hits.flatMap((h) => (h._source ? [h._source.booth_id] : [])),
+      visitedBoothIds: mine.map((c) => c.boothId),
       totalBooths: booths.length,
     };
   }
@@ -298,7 +312,6 @@ export class GameService {
           index: IDX.checkins,
           id: `${playerHash}:${booth.id}`,
           op_type: 'create',
-          refresh: 'wait_for',
           document: {
             '@timestamp': new Date().toISOString(),
             player_id: playerHash,
@@ -323,7 +336,8 @@ export class GameService {
       checkinsCounter.add(1, { booth: booth.id, method: req.code !== undefined ? 'qr' : 'game', bonus: bonus > 0 });
       pointsHistogram.record(xp, { booth: booth.id });
       this.log.info({ event: 'checkin.accepted', booth: booth.id, xp, bonus }, 'check-in accepted');
-      const totalXp = (await this.progress(sessionId)).xp;
+      // Real-time total (mget by id), including this check-in, without waiting for a refresh.
+      const totalXp = (await this.myCheckins(playerHash, all.map((b) => b.id))).reduce((a, c) => a + c.xp, 0);
       return { xpGained: xp, base, bonus, totalXp };
     });
   }
@@ -397,7 +411,7 @@ export class GameService {
 
   /** Fresh game: delete every check-in and reset the circle. Players are kept. */
   async reset(): Promise<GameState> {
-    await this.es.deleteByQuery({ index: IDX.checkins, query: { match_all: {} }, refresh: true, conflicts: 'proceed' });
+    await this.es.deleteByQuery({ index: IDX.checkins, query: { match_all: {} }, conflicts: 'proceed' });
     this.log.info({ event: 'game.reset' }, 'game reset');
     return this.saveState(defaultGameState());
   }

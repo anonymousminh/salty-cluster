@@ -190,3 +190,37 @@ describe('scheduled shrink', () => {
     expect(c.nextShrink).toBeUndefined();
   });
 });
+
+describe('when searches lag writes (Elastic Cloud Serverless)', () => {
+  it('still plays correctly: real-time reads by id, eventually consistent leaderboard', async () => {
+    const booths = Object.fromEntries(
+      DEMO_BOOTHS.map((x) => [
+        x.id,
+        { id: x.id, slot_id: x.slotId, company: x.company, color: x.color, tagline: x.tagline, location: worldToGeo(getBoothSlot(x.slotId)!.anchor), code: boothCode(x.id, 's') },
+      ]),
+    );
+    const { es } = memoryEs({ booths, game: { current: { state: live() } } }, { refreshLagMs: 400 });
+    const app = buildApp({ es, config, logger: false });
+    // Booths were seeded "long ago" (visible). Players/game state are read by id, so join + check-in work at once.
+    await new Promise((r) => setTimeout(r, 450));
+    const me = await join(app);
+    const first = await checkin(app, me, b(0));
+    expect(first.statusCode).toBe(200);
+    expect(first.json().totalXp).toBe(BASE_XP);
+    expect((await checkin(app, me, b(0))).statusCode).toBe(409); // duplicate detected without a refresh
+    const second = await checkin(app, me, b(1));
+    // Exact total right away (mget by id), although searches can't see the first check-in yet.
+    expect(second.json().totalXp).toBe(first.json().xpGained + second.json().xpGained);
+    const progress = (await app.inject({ method: 'GET', url: '/api/me/progress', headers: { authorization: `Bearer ${me}` } })).json();
+    expect(progress.visitedBoothIds.sort()).toEqual([b(0).id, b(1).id].sort());
+
+    // Organizer changes are read back immediately (by id).
+    await app.inject({ method: 'PUT', url: '/api/organizer/circle', headers: ORG, payload: { center: [0, 0], radius: 40 } });
+    expect((await app.inject({ method: 'GET', url: '/api/game' })).json().state.circle.radius).toBe(40);
+
+    // The leaderboard catches up after one refresh interval.
+    await new Promise((r) => setTimeout(r, 450));
+    const lb = (await app.inject({ method: 'GET', url: '/api/leaderboard' })).json();
+    expect(lb.entries[0]).toMatchObject({ name: 'Priya', booths: 2 });
+  });
+});

@@ -1,10 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: salty-cluster # change to the namespace the organizers gave your team
+namespace: salty-cluster # your own cluster; the hackathon cluster uses deploy/cnh (team-<team>)
 labels:
   - pairs: { app.kubernetes.io/part-of: salty-cluster }
 resources:
-  - namespace.yaml
   - api.yaml
   - web.yaml
   - otel-collector.yaml
@@ -13,8 +12,8 @@ configMapGenerator:
   - name: otel-collector-config
     files:
       - config.yaml=collector-config.yaml
-# CI pushes :main and :sha-<commit> on every merge to main. For a reproducible deploy, open a PR
-# that sets newTag to that commit's sha tag (docs/deployment-guide.md, "Deploy a new version").
+# Set by CI: after every merge to main the deploy-commit job pins newTag to that commit's image
+# ("deploy: <sha> [skip ci]"), and Argo CD rolls it out. Don't edit by hand.
 images:
   - name: ghcr.io/anonymousminh/salty-cluster-api
     newTag: main

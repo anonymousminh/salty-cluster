@@ -85,6 +85,11 @@ pnpm smoke                    # full game against a real Elasticsearch (resets i
 ```
 
 ### Hosting end to end
+On the **Cloud Native Hackathon** cluster: `./deploy/deploy.sh cnh-setup <team>` once (commit and merge it), then `./deploy/deploy.sh all`. The game goes live at `https://<team>.cnh.radarhq.io`. See the guide's hackathon section. Elsewhere:
+```bash
+cp deploy/.env.deploy.example deploy/.env.deploy   # add Elastic + Dash0 credentials
+./deploy/deploy.sh all                              # secrets, ES key, k8s secret, Argo CD, deploy, verify
+```
 **[docs/deployment-guide.md](docs/deployment-guide.md)** covers everything from prerequisites to a public URL: GitHub and Gitar, Elastic Cloud, Dash0, Kubernetes with Argo CD, Radar, and a game-day runbook. It also has a checklist of what each sponsor tool needs from the team.
 
 ## Tracks

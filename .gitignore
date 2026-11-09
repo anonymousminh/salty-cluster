@@ -3,3 +3,7 @@ dist
 .DS_Store
 tools/raster-out/
 *.log
+.env
+.env.*
+!.env.example
+deploy/.env.deploy

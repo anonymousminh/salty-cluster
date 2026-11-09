@@ -10,7 +10,11 @@ type Q = Record<string, any>; // eslint-disable-line @typescript-eslint/no-expli
  * op_type create, if_seq_no) so tests exercise the actual queries, not canned replies.
  * Also backs `pnpm dev:memory` (dev only, never deployed).
  */
-export function memoryEs(seed: Record<string, Record<string, Doc>> = {}) {
+export function memoryEs(seed: Record<string, Record<string, Doc>> = {}, opts: { refreshLagMs?: number } = {}) {
+  // Like real Elasticsearch: get-by-id is real-time, searches only see documents refreshed
+  // `refreshLagMs` ago (0 = instant; Serverless refreshes take seconds).
+  const lag = opts.refreshLagMs ?? 0;
+  const writtenAt = new Map<string, number>();
   const indices = new Map<string, Map<string, Doc>>();
   const seqNos = new Map<string, number>();
   let seq = 0;
@@ -71,7 +75,8 @@ export function memoryEs(seed: Record<string, Record<string, Doc>> = {}) {
   };
 
   const search = async (req: Q) => {
-    const docs = [...idx(req.index)].filter(([id, d]) => matches(d, id, req.query));
+    const visibleBefore = Date.now() - lag;
+    const docs = [...idx(req.index)].filter(([id, d]) => (writtenAt.get(`${req.index}/${id}`) ?? 0) <= visibleBefore && matches(d, id, req.query));
     let hits = docs.map(([id, d]) => ({ _id: id, _source: d }));
     if (req.sort?.[0]) {
       const [f, dir] = Object.entries(req.sort[0])[0] as [string, string];
@@ -96,11 +101,19 @@ export function memoryEs(seed: Record<string, Record<string, Doc>> = {}) {
       const key = `${req.index}/${id}`;
       if (req.op_type === 'create' && idx(req.index).has(id)) throw err(409);
       if (req.if_seq_no !== undefined && req.if_seq_no !== (seqNos.get(key) ?? 0)) throw err(409);
+      if (req.refresh === 'wait_for' || req.refresh === true) throw new Error('memory ES: the API must not wait for refreshes (slow on Serverless)');
       idx(req.index).set(id, JSON.parse(JSON.stringify(req.document)));
       seqNos.set(key, ++seq);
+      writtenAt.set(key, Date.now());
       return { _id: id, result: 'created' };
     },
     search,
+    mget: async ({ index, ids }: Q) => ({
+      docs: (ids as string[]).map((id) => {
+        const d = idx(index).get(id);
+        return d ? { _id: id, found: true, _source: structuredClone(d) } : { _id: id, found: false };
+      }),
+    }),
     deleteByQuery: async ({ index }: Q) => {
       const n = idx(index).size;
       idx(index).clear();

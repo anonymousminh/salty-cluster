@@ -3,6 +3,57 @@
 This takes you from an empty laptop to MeetSpace running on Kubernetes with a public URL. On the way it wires in
 all four sponsor tools. Follow the parts in order; each one ends with a check.
 
+## On the Cloud Native Hackathon cluster
+
+The Radar track gives each team a ready cluster (see [skyhook-io/cnh-starter](https://github.com/skyhook-io/cnh-starter)). It already has Argo CD, Argo Rollouts, Prometheus and Radar, and a public URL `https://<team>.cnh.radarhq.io`. Use it instead of Parts 5–7:
+
+1. **Get the cluster.** At **join.cnh.radarhq.io** (with the join code from the kickoff), register your team. Accept the Radar Cloud invite and sign in at app.radarhq.io (organization **Cloud Native Hackathon**).
+2. **Get kubectl access.** In Radar Cloud, open your cluster → Resources → Secrets → `default/kubeconfig` → Reveal `config` → copy. Save it **outside the repo**, then `export KUBECONFIG=~/cnh-kubeconfig`. The token lasts about 12–24 h; copy it again if kubectl says `Unauthorized`.
+3. **Point the repo at your team** (once), then commit, push and merge it to `main` through a PR:
+   ```bash
+   ./deploy/deploy.sh cnh-setup <team-name>
+   ```
+   This fills in `deploy/cnh` (namespace `team-<team>`, Service `app` for the public URL, api autoscaling capped for the team budget), the Argo CD Application (`app` in `team-<team>`, project `team-<team>`) and `AGENTS.md`. It also sets `TARGET=cnh` and `TEAM` in `deploy/.env.deploy`.
+4. **Deploy:** `./deploy/deploy.sh all`. It skips the Argo CD install (pre-installed, no UI) and removes the starter app's pods so they don't use your budget. It then deploys and checks the public URL. To try before merging: `TARGET_REVISION=<branch> ./deploy/deploy.sh all`.
+5. **Connect your agent to Radar** (once): `claude mcp add --scope user radar-cloud --transport http https://api.radarhq.io/mcp`. Then `/mcp` → radar-cloud → Authenticate → **Cloud Native Hackathon**. `AGENTS.md` tells the agent your cluster, namespace and how to ship.
+
+**Budget** (all namespaces together): 2 CPU / 4 GiB of requests, 4 CPU / 8 GiB of limits. MeetSpace uses about 0.6 CPU of requests and up to 2.9 CPU of limits.
+
+**Shipping:** after every merge to `main`, CI builds the images and commits `deploy: <sha> [skip ci]`, which pins them in `deploy/k8s/kustomization.yaml`. Argo CD then rolls the new version out. The branch ruleset lets the GitHub Actions app make that commit.
+
+## Automated path (recommended)
+
+`deploy/deploy.sh` runs Parts 3, 5, 6 and the checks for you. You still create the accounts (Elastic Cloud, Dash0,
+cluster access) and do the UI-only steps (Gitar install, Radar, the Dash0 dashboard).
+
+```bash
+cp deploy/.env.deploy.example deploy/.env.deploy   # gitignored; fill in ES_URL + elastic password, Dash0 endpoint + token
+```
+```bash
+./deploy/deploy.sh all
+```
+
+| Step | What it does |
+|---|---|
+| `check` | Tools present, kubectl context reachable, permissions, images on ghcr.io pullable |
+| `secrets` | Generates `ORGANIZER_TOKEN`, `PLAYER_SALT`, `BOOTH_CODE_SECRET` once and saves them to the env file |
+| `elastic` | Creates the least-privilege API key from Part 3 (from the `elastic` user's password) and verifies it |
+| `k8s` | Namespace + `salty-secrets` (+ ghcr pull secret if needed); restarts pods if the secret changed |
+| `argocd` | Installs Argo CD if missing, waits until ready, prints the UI login |
+| `app` | Applies the Argo CD Application; waits for the `es-setup` job, the api/web/collector rollouts and Synced/Healthy |
+| `expose` | Ingress (`EXPOSE=ingress`, `PUBLIC_HOST`) or LoadBalancer (`EXPOSE=loadbalancer`) |
+| `verify` | Through the web service: game at `/`, console at `/console/`, booths via `/api`, organizer token, collector export errors |
+| `github` | Branch ruleset on `main` and the Dash0 browser variables (needs `gh` and repo admin) |
+| `loadtest -- --players 200 --rate 40` | Simulated players against the cluster, for the Radar/Dash0 demo |
+| `pin <sha>` | Pins both image tags to `sha-<sha>` for a reproducible deploy (commit through a PR) |
+| `status` | Pods, Argo CD state, service/ingress |
+
+Every step is safe to re-run, and you can chain them: `./deploy/deploy.sh k8s app verify`. The env file is parsed as
+data, never executed, so passwords with special characters are fine. Secrets are passed to kubectl through a private
+temp file, not the command line.
+
+The manual steps below explain what each step does, if you prefer doing it by hand or need to debug.
+
 | Part | You end up with | Time |
 |---|---|---|
 | [0. Accounts and tools](#0-accounts-and-tools) | Everything installed and signed up | 20 min |

@@ -49,10 +49,6 @@ export function leaderboardQuery(size = MAX_PLAYERS_RANKED): Json {
   };
 }
 
-export function playerCheckinsQuery(playerHash: string): Json {
-  return { size: MAX_BOOTHS, _source: ['booth_id'], query: { term: { player_id: playerHash } }, aggs: { xp: { sum: { field: 'xp' } } } };
-}
-
 /** Organizer dashboard: totals, players, how much XP came from underdog bonuses, traffic heatmap. */
 export function organizerStatsQuery(): Json {
   return {

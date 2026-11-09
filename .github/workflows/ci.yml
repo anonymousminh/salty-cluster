@@ -63,10 +63,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: kubectl kustomize deploy/k8s > rendered.yaml
+      # The hackathon overlay, with a sample team name if cnh-setup hasn't run yet.
+      - run: |
+          cp -r deploy deploy-check && sed -i 's/__TEAM__/sample-team/g' deploy-check/cnh/kustomization.yaml deploy-check/argocd/application-cnh.yaml
+          kubectl kustomize deploy-check/cnh > rendered-cnh.yaml
+          grep -q 'name: app' rendered-cnh.yaml && grep -q 'maxReplicas: 3' rendered-cnh.yaml
       - name: kubeconform
         run: |
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
-          ./kubeconform -strict -summary rendered.yaml
+          ./kubeconform -strict -summary rendered.yaml rendered-cnh.yaml
+          ./kubeconform -strict -summary -ignore-missing-schemas deploy-check/argocd/application-cnh.yaml
           # Argo CD's Application CRD has no built-in schema.
           ./kubeconform -strict -summary -ignore-missing-schemas deploy/argocd/application.yaml
 
@@ -102,3 +108,36 @@ jobs:
             VITE_DASH0_ENDPOINT=${{ vars.VITE_DASH0_ENDPOINT }}
             VITE_DASH0_AUTH_TOKEN=${{ vars.VITE_DASH0_AUTH_TOKEN }}
             VITE_DASH0_DATASET=salty-cluster
+
+  deploy-commit:
+    # GitOps: pin the images this run just pushed, so Argo CD rolls them out (same idea as the
+    # hackathon starter's bot commit). [skip ci] keeps it from triggering another run.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: deploy-commit
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin image tags in deploy/k8s/kustomization.yaml
+        env:
+          TAG: sha-${{ github.sha }}
+          SHORT: ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Rebase onto the latest main each try, so a push that landed meanwhile can't conflict.
+          for attempt in 1 2 3 4 5; do
+            git fetch -q origin main
+            git reset -q --hard FETCH_HEAD
+            yq -i '(.images[] | select(.name == "ghcr.io/anonymousminh/salty-cluster-api" or .name == "ghcr.io/anonymousminh/salty-cluster-web")).newTag = strenv(TAG)' deploy/k8s/kustomization.yaml
+            if git diff --quiet; then exit 0; fi
+            git commit -qam "deploy: ${SHORT::7} [skip ci]"
+            if git push -q origin HEAD:main; then exit 0; fi
+            sleep $((attempt * 3))
+          done
+          echo "Couldn't push the deploy commit after 5 tries." >&2
+          exit 1
