@@ -8,6 +8,11 @@ import { useGame } from './game/store';
 import { Lobby } from './lobby/Lobby';
 import { EMPTY_PROFILE, loadProfile, saveProfile, toCareerProfile, type PlayerProfile } from './lobby/profile';
 import './app.css';
+import { DemoExperience } from './game/demo/DemoExperience';
+import { DemoQuiz } from './game/demo/DemoQuiz';
+import { useDemoStore } from './game/demo/store';
+import { DemoProgressUI } from './game/demo/DemoProgressUI';
+import { DemoAdminPanel } from './game/demo/DemoAdminPanel';
 
 const DEMO_PROFILE: PlayerProfile = {
   name: 'Alex',
@@ -38,6 +43,8 @@ export function App() {
   const teleport = useGame((s) => s.teleport);
   const waypoint = useGame((s) => s.waypoint);
   const playerPos = useGame((s) => s.playerPos);
+  const startDemo = useDemoStore((s) => s.startDemo);
+  const toggleAdminPanel = useDemoStore((s) => s.toggleAdminPanel);
 
   const [profile, setProfile] = useState<PlayerProfile>(() => (skipLobby || demo === 'enter' ? DEMO_PROFILE : loadProfile() ?? EMPTY_PROFILE));
   const [welcome, setWelcome] = useState(false);
@@ -174,6 +181,12 @@ export function App() {
                 <button className="primary" onClick={simulateMatch}>
                   💜 Simulate match with Sarah
                 </button>
+                <button className="primary" onClick={() => startDemo('booth-demo-test', quest.booths[0])}>
+                  🎮 Start Demo Experience
+                </button>
+                <button onClick={toggleAdminPanel}>
+                  ⚙️ Admin/Demo Panel
+                </button>
                 <button onClick={() => bounties[0] && setWaypoint({ kind: 'booth', id: bounties[0].id })} disabled={bounties.length === 0}>
                   ◆ Waypoint: nearest bounty ({bounties.length})
                 </button>
@@ -208,8 +221,14 @@ export function App() {
               )}
             </div>
           )}
+          
+          <DemoProgressUI />
+          <DemoAdminPanel />
         </>
       )}
+      
+      <DemoExperience />
+      <DemoQuiz />
     </div>
   );
 }
