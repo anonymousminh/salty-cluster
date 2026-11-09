@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: salty-cluster # your own cluster; the hackathon cluster uses deploy/cnh (team-<team>)
 labels:
-  - pairs: { app.kubernetes.io/part-of: salty-cluster }
+  - pairs: {app.kubernetes.io/part-of: salty-cluster}
 resources:
   - api.yaml
   - web.yaml
@@ -16,6 +16,6 @@ configMapGenerator:
 # ("deploy: <sha> [skip ci]"), and Argo CD rolls it out. Don't edit by hand.
 images:
   - name: ghcr.io/anonymousminh/salty-cluster-api
-    newTag: main
+    newTag: sha-c7f6f4e55c12a9e2a4183630d2fbd3507ccea0ed
   - name: ghcr.io/anonymousminh/salty-cluster-web
-    newTag: main
+    newTag: sha-c7f6f4e55c12a9e2a4183630d2fbd3507ccea0ed
