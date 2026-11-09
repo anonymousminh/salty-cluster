@@ -1,5 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: salty-cluster
-  labels: { app.kubernetes.io/part-of: salty-cluster }

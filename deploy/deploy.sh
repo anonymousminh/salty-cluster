@@ -4,6 +4,9 @@
 #   cp deploy/.env.deploy.example deploy/.env.deploy   # fill in credentials
 #   ./deploy/deploy.sh all                              # everything below, in order
 #
+# Cloud Native Hackathon cluster (TARGET=cnh in the env file): first, once, then commit + merge:
+#   ./deploy/deploy.sh cnh-setup <team-name>
+#
 # Steps (each can be run on its own, and each is safe to re-run):
 #   check      tools, kubectl context and permissions, images pullable
 #   secrets    generate ORGANIZER_TOKEN / PLAYER_SALT / BOOTH_CODE_SECRET once (saved to the env file)
@@ -17,6 +20,7 @@
 #   loadtest   simulated players against the cluster (Radar/Dash0 demo traffic)
 #   pin SHA    set both image tags to sha-SHA in kustomization.yaml (commit it through a PR)
 #   status     what is running, and the URLs
+#   cnh-setup TEAM   point deploy/cnh, the hackathon Application and AGENTS.md at team TEAM
 #
 # Works with macOS's bash 3.2. Needs: kubectl, curl, openssl, node; gh for `github`; pnpm (or npx) for `loadtest`.
 set -euo pipefail
@@ -24,7 +28,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT/deploy/.env.deploy}"
 REPO="anonymousminh/salty-cluster"
-APP_NAME="salty-cluster"
 SECRET_NAME="salty-secrets"
 IMAGES="salty-cluster-api salty-cluster-web"
 INDICES='["booths","checkins","players","game"]'
@@ -54,7 +57,29 @@ load_env() {
     case "$val" in \"*\") val="${val#\"}" && val="${val%\"}" ;; \'*\') val="${val#\'}" && val="${val%\'}" ;; esac
     export "$key=$val"
   done <"$ENV_FILE"
-  NAMESPACE="${NAMESPACE:-salty-cluster}"
+  # Where we deploy: our own cluster (deploy/k8s) or the hackathon's per-team vcluster (deploy/cnh).
+  TARGET="${TARGET:-own}"
+  case "$TARGET" in
+    cnh)
+      need_var TEAM
+      # shellcheck disable=SC2153  # TEAM comes from the env file
+      NAMESPACE="team-$TEAM"
+      APP_NAME="app"
+      APP_NS="$NAMESPACE"
+      APP_FILE="$ROOT/deploy/argocd/application-cnh.yaml"
+      KUSTOMIZE_DIR="$ROOT/deploy/cnh"
+      WEB_SVC="app"
+      ;;
+    own)
+      NAMESPACE="${NAMESPACE:-salty-cluster}"
+      APP_NAME="salty-cluster"
+      APP_NS="argocd"
+      APP_FILE="$ROOT/deploy/argocd/application.yaml"
+      KUSTOMIZE_DIR="$ROOT/deploy/k8s"
+      WEB_SVC="web"
+      ;;
+    *) die "TARGET must be own or cnh" ;;
+  esac
 }
 
 # Write KEY=VALUE into the env file (replace or append), and export it.
@@ -102,9 +127,13 @@ cmd_check() {
   ok "cluster reachable (context: $ctx)"
 
   local ns_in_git
-  ns_in_git="$(awk '/^namespace:/ { print $2 }' "$ROOT/deploy/k8s/kustomization.yaml")"
+  ns_in_git="$(awk '/^namespace:/ { print $2 }' "$KUSTOMIZE_DIR/kustomization.yaml")"
+  if [ "$TARGET" = cnh ] && [ "$ns_in_git" = "team-__TEAM__" ]; then
+    die "deploy/cnh still has the __TEAM__ placeholder: run ./deploy/deploy.sh cnh-setup $TEAM, commit it and merge it to main (Argo CD reads main)."
+  fi
   [ "$ns_in_git" = "$NAMESPACE" ] ||
-    die "NAMESPACE=$NAMESPACE but deploy/k8s/kustomization.yaml says '$ns_in_git'. Change kustomization.yaml and deploy/argocd/application.yaml through a PR first."
+    die "This deploys to $NAMESPACE but ${KUSTOMIZE_DIR#"$ROOT"/}/kustomization.yaml says '$ns_in_git'. Fix it through a PR first."
+  ok "target: $TARGET, namespace $NAMESPACE"
 
   local verb
   for verb in "create deployments" "create secrets" "create jobs"; do
@@ -227,6 +256,11 @@ cmd_k8s() {
 
 cmd_argocd() {
   step "Argo CD"
+  if [ "$TARGET" = cnh ]; then
+    k get crd applications.argoproj.io >/dev/null 2>&1 || die "Argo CD is missing from the hackathon cluster: ask at the Radar table."
+    ok "Argo CD is pre-installed on the hackathon cluster (no web UI: use Radar Cloud -> GitOps, or your agent)"
+    return
+  fi
   if k get crd applications.argoproj.io >/dev/null 2>&1; then
     ok "Argo CD already installed"
   else
@@ -237,10 +271,9 @@ cmd_argocd() {
     k apply -n argocd --server-side --force-conflicts -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION:-stable}/manifests/install.yaml" >/dev/null
     ok "installed Argo CD (${ARGOCD_VERSION:-stable})"
   fi
-  k -n argocd rollout status deployment/argocd-server --timeout=300s >/dev/null
   k -n argocd rollout status deployment/argocd-repo-server --timeout=300s >/dev/null
   ok "Argo CD is ready"
-  if k -n argocd get secret argocd-initial-admin-secret >/dev/null 2>&1; then
+  if k -n argocd get deployment argocd-server >/dev/null 2>&1 && k -n argocd get secret argocd-initial-admin-secret >/dev/null 2>&1; then
     ok "UI: kubectl -n argocd port-forward svc/argocd-server 8443:443  ->  https://localhost:8443 (user admin)"
     ok "password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode"
   fi
@@ -258,14 +291,23 @@ wait_for() {
   ok "$what"
 }
 
-app_synced() { [ "$(k -n argocd get application "$APP_NAME" -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null)" = "Synced/Healthy" ]; }
+app_synced() { [ "$(k -n "$APP_NS" get application "$APP_NAME" -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null)" = "Synced/Healthy" ]; }
 job_done() { [ "$(kn get job es-setup -o jsonpath='{.status.succeeded}' 2>/dev/null)" = "1" ]; }
 
 cmd_app() {
   step "Deploying with Argo CD"
   k get secret "$SECRET_NAME" -n "$NAMESPACE" >/dev/null 2>&1 || die "Secret $SECRET_NAME missing: run ./deploy/deploy.sh k8s first."
-  k apply -n argocd -f "$ROOT/deploy/argocd/application.yaml" >/dev/null
-  ok "Application $APP_NAME applied (syncs deploy/k8s from main)"
+  if [ "$TARGET" = cnh ]; then
+    # The platform's starter app (Deployment app, ConfigMap app-code) still uses budget; ours replaces it.
+    if [ "$(kn get deployment app -o jsonpath='{.spec.selector.matchLabels.app}' 2>/dev/null)" = "app" ]; then
+      kn delete deployment app --wait=false >/dev/null && ok "removed the starter app's Deployment (frees budget; Service app now points at our web pods)"
+    fi
+    kn delete configmap app-code --ignore-not-found >/dev/null
+  fi
+  local rev="${TARGET_REVISION:-main}"
+  sed -e "s#targetRevision: main#targetRevision: $rev#" "$APP_FILE" | k apply -f - >/dev/null
+  ok "Application $APP_NAME applied in $APP_NS (syncs ${KUSTOMIZE_DIR#"$ROOT"/} from $rev)"
+  [ "$rev" = main ] || warn "TARGET_REVISION=$rev: deploying a branch. Remove it once the branch is merged."
 
   if ! wait_for "es-setup job completed (indices + booths)" 420 job_done; then
     warn "es-setup did not complete. Last logs:"
@@ -280,11 +322,15 @@ cmd_app() {
     }
     ok "deployment $d ready"
   done
-  wait_for "Argo CD reports Synced/Healthy" 300 app_synced || warn "Argo CD is not Synced/Healthy yet; check the Argo CD UI."
+  wait_for "Argo CD reports Synced/Healthy" 300 app_synced || warn "Argo CD is not Synced/Healthy yet; check the Application in Radar Cloud (GitOps)."
 }
 
 cmd_expose() {
   step "Public URL"
+  if [ "$TARGET" = cnh ]; then
+    ok "the hackathon platform serves https://$TEAM.cnh.radarhq.io from Service app (nothing to do)"
+    return
+  fi
   case "${EXPOSE:-none}" in
     ingress)
       need_var PUBLIC_HOST
@@ -306,14 +352,14 @@ cmd_expose() {
 cmd_verify() {
   step "Verifying end to end (through the web service, like a browser)"
   local port=18080 pf base n status
-  kn port-forward svc/web "$port:80" >/dev/null 2>&1 &
+  kn port-forward "svc/$WEB_SVC" "$port:80" >/dev/null 2>&1 &
   pf=$!
   # shellcheck disable=SC2064
   trap "kill $pf 2>/dev/null || true" EXIT
   base="http://127.0.0.1:$port"
   # shellcheck disable=SC2329  # called through wait_for
   up() { curl -fsS --max-time 3 "$base/" >/dev/null; }
-  wait_for "port-forward to web is up" 30 up || die "could not port-forward to svc/web"
+  wait_for "port-forward to $WEB_SVC is up" 30 up || die "could not port-forward to svc/$WEB_SVC"
 
   # Capture bodies first: `curl | grep -q` can fail under pipefail when grep exits early.
   local page
@@ -332,6 +378,11 @@ cmd_verify() {
     kn logs deployment/otel-collector --since=10m | grep -iE 'unauthorized|permission denied|invalid token|connection refused' | head -3 | sed 's/^/    /'
   else
     ok "collector shows no export errors (look for service.name=api in Dash0, dataset salty-cluster)"
+  fi
+  if [ "$TARGET" = cnh ]; then
+    local pub="https://$TEAM.cnh.radarhq.io"
+    n="$(curl -fsS --max-time 10 "$pub/api/booths" 2>/dev/null | json_get length || true)"
+    if [ "${n:-0}" -gt 0 ]; then ok "public URL works: $pub ($n booths)"; else warn "$pub does not serve the game yet (the platform route can take a minute after Service app changes)"; fi
   fi
   [ "$status" = "live" ] || warn "Game is '$status'. Open the console -> Organizer (your ORGANIZER_TOKEN) -> ▶ Start."
 }
@@ -383,11 +434,34 @@ cmd_pin() {
   ok "image tags set to sha-$sha in deploy/k8s/kustomization.yaml. Commit it on a branch and open a PR; Argo CD deploys it after merge."
 }
 
+cmd_cnh_setup() {
+  local team="${1:-}"
+  printf '%s' "$team" | grep -Eq '^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$' ||
+    die "usage: ./deploy/deploy.sh cnh-setup <team-name>  (lowercase letters, digits and dashes, up to 20 characters)"
+  step "Pointing the repo at hackathon team $team"
+  local f tmp
+  for f in "$ROOT/deploy/cnh/kustomization.yaml" "$ROOT/deploy/argocd/application-cnh.yaml" "$ROOT/AGENTS.md"; do
+    [ -f "$f" ] || continue
+    tmp="$(mktemp)"
+    sed -e "s#__TEAM__#$team#g" "$f" >"$tmp" && cat "$tmp" >"$f" && rm -f "$tmp"
+    ok "${f#"$ROOT"/}"
+  done
+  if [ -f "$ENV_FILE" ]; then
+    set_env TARGET cnh
+    set_env TEAM "$team"
+    ok "TARGET=cnh and TEAM=$team saved to $(basename "$ENV_FILE")"
+  fi
+  printf '\n  Next: commit these files, push, and merge to main (Argo CD reads main), then ./deploy/deploy.sh all\n'
+  printf '  To try it before merging: TARGET_REVISION=<your-branch> ./deploy/deploy.sh all\n'
+}
+
 cmd_status() {
   step "Status"
   kn get pods -o wide 2>/dev/null || warn "namespace $NAMESPACE not found"
-  k -n argocd get application "$APP_NAME" -o jsonpath='{"Argo CD: "}{.status.sync.status}{" / "}{.status.health.status}{"\n"}' 2>/dev/null || true
-  kn get ingress,svc web 2>/dev/null || true
+  k -n "$APP_NS" get application "$APP_NAME" -o jsonpath='{"Argo CD: "}{.status.sync.status}{" / "}{.status.health.status}{"\n"}' 2>/dev/null || true
+  kn get svc "$WEB_SVC" 2>/dev/null || true
+  kn get ingress 2>/dev/null || true
+  if [ "$TARGET" = cnh ]; then ok "public URL: https://$TEAM.cnh.radarhq.io"; fi
 }
 
 cmd_all() {
@@ -400,6 +474,7 @@ cmd_all() {
   cmd_expose
   cmd_verify
   step "Done"
+  if [ "$TARGET" = cnh ]; then ok "Play: https://$TEAM.cnh.radarhq.io   Organizer: https://$TEAM.cnh.radarhq.io/console/#/organizer"; fi
   ok "Organizer console: /console/#/organizer (token = ORGANIZER_TOKEN in $(basename "$ENV_FILE")). Press ▶ Start."
   ok "Next: ./deploy/deploy.sh github (repo admin), connect Radar, build the Dash0 dashboard (docs/deployment-guide.md Parts 7-8)."
 }
@@ -409,10 +484,14 @@ STEPS=" check secrets elastic k8s argocd app expose verify github status all "
 main() {
   local cmd="${1:-help}"
   case "$cmd" in
-    help | -h | --help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//' ;;
+    help | -h | --help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//' ;;
     pin)
       shift
       cmd_pin "$@"
+      ;;
+    cnh-setup)
+      shift
+      cmd_cnh_setup "$@"
       ;;
     loadtest)
       shift

@@ -1,0 +1,20 @@
+# Cloud Native Hackathon cluster (Radar's vcluster per team). Argo CD syncs this folder, via
+# deploy/argocd/application-cnh.yaml, into namespace team-<team>. Run once, then commit:
+#   ./deploy/deploy.sh cnh-setup <team-name>
+# It reuses deploy/k8s (image tags there are pinned by CI on every merge to main) and adds what the
+# hackathon cluster needs.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: team-__TEAM__
+resources:
+  - ../k8s
+  # The platform routes https://<team>.cnh.radarhq.io to Service "app", port 80.
+  - service-app.yaml
+patches:
+  # Budget: 4 CPU of limits for everything. api 3 x 500m + web 2 x 200m + collector 500m + setup job
+  # 500m = 2.9 CPU, which leaves room for a rolling update's extra pod.
+  - target: { kind: HorizontalPodAutoscaler, name: api }
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3

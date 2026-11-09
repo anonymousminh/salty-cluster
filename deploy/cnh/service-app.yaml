@@ -1,0 +1,11 @@
+# The hackathon platform sends https://<team>.cnh.radarhq.io to this Service. It points at the
+# web pods (nginx: the 3D game at /, the console at /console/, /api proxied to the api Service).
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  labels: { app.kubernetes.io/name: web }
+spec:
+  selector: { app.kubernetes.io/name: web }
+  ports:
+    - { name: http, port: 80, targetPort: http }

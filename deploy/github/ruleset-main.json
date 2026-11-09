@@ -2,10 +2,21 @@
   "name": "protect-main",
   "target": "branch",
   "enforcement": "active",
-  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
+      "exclude": []
+    }
+  },
   "rules": [
-    { "type": "deletion" },
-    { "type": "non_fast_forward" },
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
     {
       "type": "pull_request",
       "parameters": {
@@ -21,14 +32,33 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          { "context": "typecheck-test" },
-          { "context": "e2e" },
-          { "context": "es-smoke" },
-          { "context": "k8s-validate" },
-          { "context": "images (api)" },
-          { "context": "images (web)" }
+          {
+            "context": "typecheck-test"
+          },
+          {
+            "context": "e2e"
+          },
+          {
+            "context": "es-smoke"
+          },
+          {
+            "context": "k8s-validate"
+          },
+          {
+            "context": "images (api)"
+          },
+          {
+            "context": "images (web)"
+          }
         ]
       }
+    }
+  ],
+  "bypass_actors": [
+    {
+      "actor_id": 15368,
+      "actor_type": "Integration",
+      "bypass_mode": "always"
     }
   ]
 }
