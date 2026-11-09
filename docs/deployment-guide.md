@@ -3,6 +3,39 @@
 This takes you from an empty laptop to MeetSpace running on Kubernetes with a public URL. On the way it wires in
 all four sponsor tools. Follow the parts in order; each one ends with a check.
 
+## Automated path (recommended)
+
+`deploy/deploy.sh` runs Parts 3, 5, 6 and the checks for you. You still create the accounts (Elastic Cloud, Dash0,
+cluster access) and do the UI-only steps (Gitar install, Radar, the Dash0 dashboard).
+
+```bash
+cp deploy/.env.deploy.example deploy/.env.deploy   # gitignored; fill in ES_URL + elastic password, Dash0 endpoint + token
+```
+```bash
+./deploy/deploy.sh all
+```
+
+| Step | What it does |
+|---|---|
+| `check` | Tools present, kubectl context reachable, permissions, images on ghcr.io pullable |
+| `secrets` | Generates `ORGANIZER_TOKEN`, `PLAYER_SALT`, `BOOTH_CODE_SECRET` once and saves them to the env file |
+| `elastic` | Creates the least-privilege API key from Part 3 (from the `elastic` user's password) and verifies it |
+| `k8s` | Namespace + `salty-secrets` (+ ghcr pull secret if needed); restarts pods if the secret changed |
+| `argocd` | Installs Argo CD if missing, waits until ready, prints the UI login |
+| `app` | Applies the Argo CD Application; waits for the `es-setup` job, the api/web/collector rollouts and Synced/Healthy |
+| `expose` | Ingress (`EXPOSE=ingress`, `PUBLIC_HOST`) or LoadBalancer (`EXPOSE=loadbalancer`) |
+| `verify` | Through the web service: game at `/`, console at `/console/`, booths via `/api`, organizer token, collector export errors |
+| `github` | Branch ruleset on `main` and the Dash0 browser variables (needs `gh` and repo admin) |
+| `loadtest -- --players 200 --rate 40` | Simulated players against the cluster, for the Radar/Dash0 demo |
+| `pin <sha>` | Pins both image tags to `sha-<sha>` for a reproducible deploy (commit through a PR) |
+| `status` | Pods, Argo CD state, service/ingress |
+
+Every step is safe to re-run, and you can chain them: `./deploy/deploy.sh k8s app verify`. The env file is parsed as
+data, never executed, so passwords with special characters are fine. Secrets are passed to kubectl through a private
+temp file, not the command line.
+
+The manual steps below explain what each step does, if you prefer doing it by hand or need to debug.
+
 | Part | You end up with | Time |
 |---|---|---|
 | [0. Accounts and tools](#0-accounts-and-tools) | Everything installed and signed up | 20 min |
