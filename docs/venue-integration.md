@@ -34,7 +34,7 @@ The **☰ Demo** drawer (top left) has buttons to simulate a match, set a bounty
 | Spawn Plaza | Entrance arch, fountain, two café meetup tables |
 | Expo Street | 10 sponsor booths in two facing rows |
 | Careers Corner | 6 booths for hiring companies |
-| Networking Garden | 8 meetup tables, lounges and benches |
+| Networking Garden | 6 meetup tables, a lounge and a bench |
 | Keynote Stage | Stage, screen, benches, and a stage-side lounge |
 
 All coordinates are meters: origin at the park centre, +x east, +z south. `validateWorld()` (tested) checks that:

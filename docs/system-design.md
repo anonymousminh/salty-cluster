@@ -1,224 +1,261 @@
-# MeetSpace — System Design (team reference)
+# MeetSpace — System Design
 
-> **Update (2026-11-09):** MeetSpace is now a **virtual conference played as a 3D game** in our own world, **Expo Park**. The Shop Workspace floor plans are no longer used.
-> - Attendees sign up in a lobby, then walk a 3D character around the park.
-> - They check in at sponsor booths by walking up, chatting and answering a quick question.
-> - Matches meet at meetup points.
->
-> §5 below is rewritten for this. Elsewhere, read "venue" as Expo Park and "staff badge scan" as walk-up check-in. The backend design (matching, booking, SSE, observability) is unchanged.
+> Team reference. Companion docs: [`../MeetSpace_Hackathon_MVP.md`](../MeetSpace_Hackathon_MVP.md) (product scope and demo) and [`venue-integration.md`](venue-integration.md) (how to plug into the game client and its API contract).
 
-## Context
-`MeetSpace_Hackathon_MVP.md` describes a one-day MVP (Discover → Connect → Meet) with an in-memory store, seeded profiles, and three made-up meeting spots. This plan is a staff-engineer design that keeps the hackathon flow and the demo moment (a mutual match flies the 3D camera to a table) and holds up for **800+ concurrent real attendees** at The Shop Workspace. It uses the real layout from `The-Shop-Floor-Plans.pdf` (3rd and 4th floors). Sponsor tech: **Elasticsearch** (ranking) and **SonarSource** (quality gate). Optional tools evaluated on merit: **Dash0** was adopted for observability. **Radar** (radarhq.io, a Kubernetes UI) was not adopted because this design does not run Kubernetes; see §8.
+## What changed
+MeetSpace started as an in-person networking app for a real venue (The Shop Workspace in Salt Lake City, built from its floor plans). The idea shifted twice:
 
-The repo holds only the two docs, so this is a new build. The official virtual-tour page names no provider and exposes no embeddable model ID (the site also blocks automated fetches). **Decision:** we build our own lightweight 3D model from the PDF and add a "See the real space" button that links out to the official tour. We do not re-host their scans.
+1. **From a real floor plan to our own map.** The Shop Workspace is no longer used. We design our own conference world, **Expo Park**.
+2. **From a 3D map to a game you play.** MeetSpace is now a **virtual conference played as a 3D game**: attendees sign up in a lobby, then walk a 3D character around the park, visit sponsor booths for XP, match with other attendees, and walk to meetup points.
 
----
+Consequences for the design:
+- No venue Wi-Fi problem and no real-world positioning. Attendees are online, so what matters is **client performance** (3D on phones), **presence traffic** (800 moving players) and **cheat resistance** (XP has to be earned by actually being at the booth).
+- Booth visits are verified by **walk-up check-in** (proximity + dwell time + a quick question), not by staff scanning a badge.
+- Matching, booking and real-time delivery are unchanged.
 
-## 1. Requirements & capacity math
+## 0. Status
 
-**Functional:** join, profile, ranked deck with "why connect", swipe, mutual match, real-time match notification, spot/slot booking without double-booking, 3D fly-to, confirmation, block/report.
+| Area | Status |
+|---|---|
+| World data, 3D game client, lobby, HUD, booth check-in flow, scoring and quiz helpers | **Built** in `apps/web` and `packages/venue`, running against mocks. 12 unit tests pass. |
+| Backend (Postgres, API, SSE), Elasticsearch ranking, swipe/match screens | **Designed here, not built.** Teammates' work. |
+| Presence (multiplayer) | **Designed here, not built.** The client currently shows 12 simulated attendees. |
+| Auth, observability, infrastructure, load tests | **Designed here, not built.** |
 
-**SLOs** (encoded as Dash0 SLOs, see §9)
+Everything below marks which parts are built (**[built]**) and which are proposals (**[proposed]**).
+
+## 1. Requirements and capacity
+
+**Functional**
+- Lobby sign-up with a player profile and a 3D character preview **[built, local only]**
+- Walkable 3D world with collisions, a third-person camera and keyboard/touch controls **[built]**
+- Sponsor booths with walk-up check-in, XP, an underdog bonus and a live leaderboard **[built on mocks]**
+- Ranked "people to meet" deck with a "why connect" explanation, swipe, mutual match, real-time notification **[proposed]**
+- Meetup-point suggestion and booking without double-booking, plus a waypoint to the meetup **[waypoint built, booking proposed]**
+- Presence: see other attendees move around **[proposed]**
+- Block and report **[proposed]**
+
+**Targets** (proposed)
+
 | Metric | Target |
 |---|---|
 | Deck fetch (20 cards) p95 | < 250 ms |
 | Swipe write p95 | < 100 ms |
-| Match → both users notified p95 | < 1 s |
-| 3D venue first render on venue Wi-Fi | < 3 s; `venue.glb` ≤ 2 MB |
-| Availability during event hours | 99.9 %; survives loss of any one task or AZ |
+| Match → both players notified p95 | < 1 s |
+| Presence: your move visible to nearby players | < 300 ms typical |
+| Booth check-in response p95 | < 300 ms |
+| Time to first interactive 3D frame on a mid-range phone, after the lobby | < 5 s |
+| Availability during event hours | 99.9 %; survives the loss of any one API task or AZ |
 
-**Load model (peak: keynote ends and everyone opens the app):** 800 concurrent users, designed for 2,000.
-- **~270 swipe writes/s peak**, ~120k swipe rows per event
-- ~15 deck queries/s
-- 800–2,000 long-lived streams
-- 800² = 640k candidate pairs, which is small
+**Load model** (peak: a keynote ends and everyone opens the app). Design for 800 concurrent players, with headroom to 2,000. These are estimates and need a load test:
+- Swipes: about 270 writes/s at peak, about 120k rows per event. Deck queries: about 15/s.
+- Booth check-ins: bursty but small (800 players × about 8 booths over several hours).
+- Presence: 800 players × 10 Hz = **8,000 inbound updates/s**. Sending everything to everyone would be 800 × 799 × 10 ≈ 6.4 M updates/s ≈ 75 MB/s, which is impossible. So presence needs **interest management** (§8): each client only receives the nearest players.
+- Long-lived connections: 800–2,000 (one WebSocket for presence, one SSE stream for events).
 
-Throughput is not the hard part. Correctness (no double matches, no overbooking), fairness, and **venue Wi-Fi** are. 800 phones share one coworking network, so payloads stay small, assets are cached at the CDN, and the app ships as an offline-tolerant PWA.
+The hard parts are correctness (no double matches or overbooking, XP that can't be farmed), presence fan-out, and 3D performance on phones. Raw throughput is not.
 
-## 2. Architecture (AWS us-west-2 / Oregon, chosen for SLC latency and Dash0's Oregon region)
+## 2. Architecture [proposed, AWS us-west-2]
 
 ```
- Phones (PWA: React+TS, R3F, Dash0 Web SDK) ──▶ CloudFront CDN (app, venue.glb, avatars)
-        │ REST + SSE
-        ▼
+ Phones / laptops (React 19 + R3F + Rapier) ──▶ CloudFront (app, character.glb, textures)
+        │ REST + SSE                │ WebSocket (presence)
+        ▼                           ▼
  ALB ─▶ ECS Fargate (2 AZs)
-         ├─ api service (Fastify, 2→6 tasks, target-tracking autoscale on CPU + req/target)
-         ├─ indexer service (outbox → Elasticsearch, 1 task, PG advisory-lock leader)
-         └─ OTel Collector sidecar per task ──OTLP──▶ Dash0 (Oregon)
+         ├─ api service        Fastify, 2→6 tasks, autoscaled; REST + SSE
+         ├─ presence service   1 task per event (zone rooms in memory, 5–10 Hz tick)
+         ├─ indexer service    outbox → Elasticsearch, 1 task, PG advisory-lock leader
+         └─ OTel Collector sidecar per task ──OTLP──▶ Dash0
         │
         ├─ RDS Postgres 16 (Multi-AZ): source of truth + LISTEN/NOTIFY fan-out
-        └─ Elastic Cloud (us-west-2): derived attendee index
+        └─ Elastic Cloud: derived attendee index (matching)
  CI: GitHub Actions → SonarCloud quality gate → image to ECR → ECS rolling deploy (circuit breaker + auto-rollback)
 ```
 
-### Design revisions after review (simplify where scale allows)
-1. **Drop Redis.** At 800–2,000 users, Postgres `LISTEN/NOTIFY` replaces Redis for cross-task fan-out. Each task LISTENs on `match_events` and pushes to its own local connections. Rate limiting moves to a per-task in-memory token bucket. With 2–6 tasks the effective limit is at most N× looser, which is acceptable, and swipes are idempotent anyway. The deck cache becomes an in-process LRU (60 s). That is one fewer stateful dependency to run, secure, and monitor. *Revisit if more than ~10k concurrent users.*
-2. **Use SSE instead of WebSockets.** Every real-time message is server→client. SSE runs over plain HTTP/2 through the ALB/CDN and reconnects on its own. Its `Last-Event-ID` maps directly onto the inbox catch-up (`GET /me/inbox?since=`), so a dropped connection never loses a match.
-3. **Use managed stateful services (RDS, Elastic Cloud) and stateless containers on Fargate.** There are no servers or clusters to operate. A bad deploy rolls back automatically through the ECS deployment circuit breaker.
-4. **Postgres is the source of truth. Elasticsearch is a derived read model** synced through a transactional outbox. If Elasticsearch fails, the deck falls back to a Postgres ranking query.
+Design decisions:
+1. **Postgres is the source of truth. Elasticsearch is a derived read model**, synced through a transactional outbox. If Elasticsearch fails, the deck falls back to a Postgres ranking query.
+2. **No Redis at this scale.** Postgres `LISTEN/NOTIFY` fans events out across API tasks. Rate limits are per-task in-memory token buckets, which is up to N× looser with N tasks, and acceptable because writes are idempotent. Revisit above about 10k concurrent users.
+3. **SSE for server→client events** (match, `booth.visited`, `leaderboard.changed`). `Last-Event-ID` maps onto an inbox catch-up (`GET /me/inbox?since=`), so a dropped connection never loses a match.
+4. **WebSocket for presence only**, because it needs client→server positions at 5–10 Hz. Presence is **ephemeral**: it is never written to Postgres. If the presence task dies, clients reconnect and their next position update rebuilds the room.
+5. **Managed stateful services (RDS, Elastic Cloud), stateless containers on Fargate.** A bad deploy rolls back through the ECS circuit breaker.
 
-## 3. Data model (Postgres)
+## 3. Data model (Postgres) [proposed]
+
 ```
-events(id, name, venue_id, starts_at, ends_at)
-attendees(id, event_id, name, role, interests[], skills[], looking_for[], offers[], bio, visibility)
+events(id, name, starts_at, ends_at)
+attendees(id, event_id, name, role, looking_for[], offers[], skills[], interests[], bio,
+          avatar_color, show_on_leaderboard)
 swipes(event_id, from_id, to_id, direction, created_at, PK(event_id, from_id, to_id))
 matches(id, event_id, user_a, user_b, UNIQUE(event_id, LEAST(a,b), GREATEST(a,b)))
-spots(id, venue_id, floor, name, kind, capacity_pairs, anchor_xyz, camera_pose)
+spots(id, zone, name, kind, capacity_pairs, anchor_x, anchor_z)       -- seeded from packages/venue
 slots(spot_id, starts_at, capacity, reserved, PK(spot_id, starts_at))
 meetings(id, match_id UNIQUE, spot_id, starts_at, status)
-inbox(id bigserial, user_id, type, payload, created_at)   -- also SSE event ids
+companies(id, name, color, tagline, hiring[], tags[])
+booths(id, company_id, slot_id)                                        -- slot_id = b01…b16 from packages/venue
+booth_visits(booth_id, attendee_id, base, bonus, created_at, PK(booth_id, attendee_id))
+inbox(id bigserial, user_id, type, payload, created_at)                -- also the SSE event ids
 outbox(id, aggregate, payload, processed_at) ; blocks ; reports
 ```
-- **New profile field:** "Can help with" (`offers[]`). Complementary matching becomes `my.looking_for ∩ their.offers`.
-- **No double match:** handled in one transaction. Insert the swipe (`ON CONFLICT DO NOTHING`), then check for the reciprocal right swipe. If it exists, `INSERT matches ... ON CONFLICT DO NOTHING RETURNING id`. The canonical-pair unique index lets exactly one transaction win. Only the winner writes two `inbox` rows and calls `NOTIFY`.
-- **No overbooking:** one atomic statement, `UPDATE slots SET reserved=reserved+1 WHERE spot_id=$1 AND starts_at=$2 AND reserved<capacity RETURNING *`. Zero rows means a `409` response with alternative slots. `meetings.match_id UNIQUE` stops a match from booking twice.
-- **Idempotency:** every mutation carries an `Idempotency-Key` header, because venue Wi-Fi causes retries.
 
-## 4. Matching & ranking (Elasticsearch)
+- **New profile field:** "Can help with" (`offers[]`). Complementary matching becomes `my.looking_for ∩ their.offers`.
+- **No double match** (one transaction): insert the swipe (`ON CONFLICT DO NOTHING`), check for the reciprocal right swipe, then `INSERT matches … ON CONFLICT DO NOTHING RETURNING id`. The canonical-pair unique index lets exactly one transaction win; only the winner writes two `inbox` rows and calls `NOTIFY`.
+- **No overbooking** (one statement): `UPDATE slots SET reserved = reserved + 1 WHERE spot_id=$1 AND starts_at=$2 AND reserved < capacity RETURNING *`. Zero rows means `409` with alternative slots. `meetings.match_id UNIQUE` stops one match booking twice.
+- **One XP credit per booth per attendee** is the primary key of `booth_visits`. A repeat check-in returns `409`.
+- **Idempotency:** mutations carry an `Idempotency-Key` header, so retries on flaky connections are safe.
+
+Meetup points are a coordination limit, not a physical one: nothing stops many avatars standing in the same place. The 11 current points allow 26 pairs at once, so 24 slots (6 hours × 15 min) give about 624 meetings, which covers 800 people each meeting one person (400 pairs). Add spots in `packages/venue` to raise it.
+
+## 4. Matching and ranking (Elasticsearch) [proposed]
 - `bool.must_not`: self, already-swiped users, blocks in both directions.
-- `bool.should` with **named queries**, so each hit's `matched_queries` produces the "Why connect?" text deterministically with no LLM:
-  - `their.offers ∈ my.looking_for` (×4)
-  - `their.looking_for ∈ my.offers` (×3)
-  - shared interests (×1.5)
-  - shared skills (×1)
-  - bio (×0.5)
-- `function_score` adjustments:
-  - **Popularity dampening:** a decay on inbound right-swipes, so attention spreads and more attendees match.
-  - **Reciprocity boost:** a quiet bump when they already liked me.
-  - **Freshness:** a boost for recent joiners.
-- The score is normalized to 0–100 and labeled "illustrative".
+- `bool.should` with **named queries**, so each hit's `matched_queries` produces the "Why connect?" text deterministically, with no LLM:
+  - `their.offers ∈ my.looking_for` (×4), `their.looking_for ∈ my.offers` (×3), shared interests (×1.5), shared skills (×1), bio (×0.5)
+- `function_score` adjustments: **popularity dampening** (decay on inbound right-swipes, so attention spreads), a small **reciprocity boost** when they already liked me, and a **freshness** boost for recent joiners.
+- The score is normalised to 0–100 and labelled "illustrative".
 - **Fallback:** if Elasticsearch fails, a Postgres array-overlap ranking takes over.
 - **Phase 2:** `dense_vector` + kNN hybrid with reciprocal rank fusion.
 
-## 5. World & 3D game (Expo Park)
-- **World data** (`packages/venue`, shared by the API and the client) defines:
-  - **zones**: Spawn Plaza, Expo Street, Keynote Stage, Networking Garden, Careers Corner
-  - **paths** and **obstacles** (physics colliders)
-  - **16 booth slots** and **11 meetup points** (`mp-…`, with `capacityPairs`)
-  - the spawn point
+## 5. World and game client [built]
+**World data** lives in `packages/venue` and is shared by the client and the API:
 
-  Trees are scattered by a seeded generator. `validateWorld` keeps every booth and spot clear of obstacles and paths.
-- **Client stack:** React Three Fiber 9 + drei 10 + **Rapier** physics + **ecctrl** (pmndrs character controller):
-  - third-person camera
-  - WASD, Shift, Space and E on desktop, a joystick plus Jump/Talk buttons on phones
-- **Character:** a procedural default, or a drop-in CC0 KayKit glTF at `/characters/player.glb`. Ready Player Me shut down on 2026-01-31, so it is not an option.
-- **Booth check-in (replaces staff scans):** within 4.5 m of the booth front → 6 s dwell → one quiz question → `POST /booths/:id/checkin`. The server should re-check dwell from presence pings.
-- **Underdog bonus XP**, the leaderboard, and SSE `booth.visited` are unchanged.
-- **Multiplayer:** bots for now. Real presence = positions at ~10 Hz over WebSocket per zone room, interpolated client-side. Each update is small (≈ 20 B per player per tick).
-- **Performance:** the Rapier WASM adds ~0.5 MB gzip, so lazy-load the game chunk after the lobby. Trees are instanced. Bots are capped (12) on phones.
+| Zone | Contents |
+|---|---|
+| Spawn Plaza | Entrance arch, fountain, 2 café meetup tables |
+| Expo Street | 10 sponsor booths in two facing rows |
+| Careers Corner | 6 booths |
+| Networking Garden | 6 tables, a lounge and a bench |
+| Keynote Stage | Stage, screen, benches, a stage-side lounge |
 
-## 6. API surface (zod schemas in `packages/shared`, OpenAPI generated)
+- Coordinates are meters: origin at the park centre (96 × 96 m), +x east, +z south.
+- **16 booth slots** (`b01`–`b16`) and **11 meetup points** (`mp-…`). Companies are assigned to slots by the API, so a sponsor can move without a map change.
+- `validateWorld()` (tested) checks that booths and meetup points are inside the park, clear of obstacles and paths, and booths are at least 4 m apart. Trees come from a seeded generator, so they are identical on every machine.
+
+**Client stack:** React 19, React Three Fiber 9, drei 10, **Rapier** physics (`@react-three/rapier`), **ecctrl 2** (pmndrs character controller) and zustand for game state.
+- Third-person follow camera. Desktop: WASD/arrows, Shift to run, Space to jump, E to talk, drag to orbit, wheel to zoom. Phones: joystick plus Jump and Talk buttons.
+- `game/Player.tsx` bridges keyboard, joystick and buttons into ecctrl, freezes input while a dialog is open, and publishes position and proximity at about 10 Hz.
+- **Character:** a procedural toy-style body by default. A rigged CC0 glTF (for example KayKit Adventurers) can be dropped in at `apps/web/public/characters/player.glb` and is picked up automatically, with idle/walk/run/jump/cheer clips matched by name. Ready Player Me shut down on 2026-01-31, so we do not build on it.
+- **HUD:** compass, minimap, XP/level bar, leaderboard, toasts, booth dialog, and a waypoint beam with ground arrows.
+
+**Performance** (measured on a production build, not yet on a real phone):
+- The main bundle is about 870 KB gzipped, largely the inlined Rapier physics WASM (not profiled). Proposal: lazy-load the game chunk after the lobby.
+- Trees are instanced. The client should draw only the nearest N other players (§8).
+
+## 6. Booth quest: scoring and check-in [built on mocks]
+**Scoring** (`packages/venue/src/scoring.ts`, shared so the map and the server agree):
+- A first visit is worth `BASE_XP = 10` plus an **underdog bonus** `round(MAX_BONUS × clamp((avgVisits − visits) / max(avgVisits, 1), 0, 1))`, with `MAX_BONUS = 25`.
+- The bonus is locked in at check-in time. A booth with a bonus of at least 15 is a **bounty** (gold beam on the map).
+- Effect: sponsors with few visitors are worth more, so traffic spreads across the park.
+
+**Check-in** (`packages/venue/src/interaction.ts`, shared constants):
+1. Walk within `CHECKIN_RADIUS = 4.5 m` of the booth front and press E.
+2. Chat for `DWELL_SECONDS = 6`.
+3. Answer one question (`boothQuiz`, three options, deterministic per booth). A wrong answer locks it for 5 s.
+4. `POST /booths/:id/checkin` awards XP.
+
+The quiz is friction and a prompt to read the pitch, **not security**: the client can derive the answer. The real controls are proximity, dwell time verified by the server, one credit per booth, and rate limits (§9).
+
+## 7. Real-time presence (multiplayer) [proposed]
+- **Protocol:** WebSocket. The client sends `{x, z, heading, state}` at about 10 Hz. The server validates and sends back snapshots at 5 Hz.
+- **Rooms:** one in-memory room per zone-group, so players only ever receive neighbours.
+- **Interest management:** each snapshot contains the nearest 40 players within about 40 m. Estimated cost: about 12 B per player update, so about 0.5 KB per snapshot per client, about 2.5 KB/s per client, about 2 MB/s and 4,000 msgs/s for 800 clients on one task. Validate with a load test before trusting this.
+- **Client:** interpolates snapshots (about 100–200 ms buffer). The bots in `game/world/Bots.tsx` use the same renderer, so real players replace them without a rendering change.
+- **Opt-in:** a player who does not opt in is not broadcast to others.
+- **Server uses presence for check-in:** the check-in endpoint asks the presence service whether the player has been within the radius for at least 6 s.
+
+## 8. API surface [proposed; zod schemas in `packages/shared`, OpenAPI generated]
 ```
-POST /events/:id/join   PUT /me/profile   GET /me/deck?limit=20
-POST /swipes → {matched, matchId?}        GET /me/matches
-GET  /me/stream (SSE)   GET /me/inbox?since=
+POST /events/:id/join     { name, role, lookingFor[], skills[], color, showOnLeaderboard } → session
+PUT  /me/profile          GET /me/deck?limit=20        POST /swipes → { matched, matchId? }
+GET  /me/matches          GET /me/stream (SSE)         GET /me/inbox?since=
 GET  /spots/suggest?matchId=   GET /spots/availability
-POST /meetings → 201 | 409 {alternatives}  POST /meetings/:id/confirm
-POST /blocks  POST /reports   GET /healthz /readyz
+POST /meetings → 201 | 409 { alternatives }            POST /meetings/:id/confirm
+GET  /booths              GET /booths/stats            GET /me/progress     GET /leaderboard?limit=10
+POST /booths/:id/checkin  { dwellMs, quizAnswer } → { xpGained, base, bonus } | 409 already_visited | 422 not_eligible
+POST /blocks   POST /reports   GET /healthz /readyz
+WS   /presence            SSE events: match.created, booth.visited, leaderboard.changed
 ```
 
-## 7. Security & privacy
-- **Auth:** event code + email OTP issues a JWT. A badge QR code deep-links to join. The demo keeps a no-auth feature flag.
-- **Privacy:** left swipes and pre-match likes are never revealed. Blocks apply in both directions. Rate limits: swipes 60/min, OTP 5/h.
-- **Data retention:** minimal PII, deleted 30 days after the event.
-- **Telemetry hygiene (matters with a SaaS backend):** user IDs are **HMAC-hashed** in spans and logs. Names, bios, and emails never go into attributes. The OTel Collector has a redaction processor as a backstop. Dash0 does not support frequent per-user deletions, so we never send raw PII in the first place.
-- **Code quality:** the SonarCloud quality gate blocks merges on new bugs or vulnerabilities, or on coverage below 70 % for `apps/api`.
+## 9. Security, privacy, abuse
+- **Auth:** event code plus email OTP issues a short-lived JWT. The hackathon demo keeps a no-auth feature flag.
+- **Check-in integrity:** the server verifies dwell from presence, enforces one credit per booth, and rate-limits check-ins. **Movement sanity:** reject position jumps above a maximum speed (running is about 7 m/s), which blocks teleport hacks.
+- **Privacy:** left swipes and pre-match likes are never revealed. Blocks apply in both directions. The leaderboard shows the display name the player chose, or "Anonymous". Presence is opt-in.
+- **Rate limits:** swipes 60/min, OTP 5/h, check-ins 10/min.
+- **Retention:** minimal personal data, deleted 30 days after the event.
+- **Telemetry hygiene:** user IDs are HMAC-hashed in spans and logs. Names, bios and emails never go into attributes, and the OTel Collector redacts as a backstop.
+- **Code quality:** SonarCloud gate blocks merges on new bugs or vulnerabilities, or coverage below 70 % for `apps/api`.
 
-## 8. Platform decision: ECS Fargate (Kubernetes + Radar considered, not adopted)
-| | **ECS Fargate (chosen)** | EKS + Radar | Fly.io/Render |
+## 10. Platform and observability [proposed]
+Sponsor tools were suggestions, evaluated on merit.
+
+**Hosting: ECS Fargate** over Kubernetes or a PaaS:
+
+| | ECS Fargate (chosen) | EKS + Radar | Fly.io / Render |
 |---|---|---|---|
-| Ops burden | Low: no nodes/cluster | High: cluster, Helm, IAM, upgrades | Lowest |
+| Ops burden | Low: no nodes or cluster | High: cluster, Helm, IAM, upgrades | Lowest |
 | Multi-AZ, autoscale, auto-rollback | Yes (deployment circuit breaker) | Yes (HPA/PDB) | Partial |
-| Same VPC as RDS/private Elastic link | Yes | Yes | No (public egress) |
-| Cost (event month) | ~$40–80 for tasks | +$73 control plane + nodes | ~$30–60 |
-| Fit for 800–2,000 users | Right-sized | Over-engineered | OK, weaker networking/HA story |
+| Private link to RDS / Elastic | Yes (same VPC) | Yes | No (public egress) |
+| Cost for the event month (rough) | about $40–80 | +$73 control plane + nodes | about $30–60 |
+| Fit for 800–2,000 users | Right-sized | Over-engineered | OK, weaker HA story |
 
-**Why not Radar:** radarhq.io is an open-source Kubernetes UI (topology, change timeline, Helm rollback, MCP). It is a good tool, but it only pays off once you run Kubernetes, and 800 users do not justify a cluster. ECS console + Dash0 traces/service map + deployment circuit breaker cover the event-day ops needs. **Revisit trigger:** a move to Kubernetes (multi-event SaaS, more than ~10 services). At that point Radar (local `kubectl radar`, OIDC + read-only RBAC if in-cluster) is a cheap add.
+Radar (radarhq.io, an open-source Kubernetes UI) only pays off once you run Kubernetes. **Revisit** if we move to Kubernetes (multi-event SaaS, more than about 10 services).
 
-(radar.com, the location SDK, was also considered for in-venue presence and rejected: no free tier, beacons are Enterprise-only, the web SDK has no indoor or floor-level positioning, and live tracking is out of scope.)
+**Observability: Dash0** (OpenTelemetry-native). It covers traces, logs, metrics, web events, synthetic checks, and SLOs with burn-rate alerts. Data stays in the Oregon region, and instrumentation is pure OTLP, so switching backends (for example Grafana Cloud's free tier) only changes the collector exporter.
+- **Backend:** `@opentelemetry/auto-instrumentations-node` into a collector sidecar that does tail sampling (keep all errors and slow traces, about 20 % of the rest) and PII redaction, then forwards to Dash0.
+- **Browser:** `@dash0/sdk-web` with an ingest-only token scoped to one dataset (browser tokens are public). `traceparent` propagates so a slow swipe or check-in traces from tap to Postgres.
+- **Business metrics:** swipes/s, matches/min, check-ins/min, XP awarded, bounty hit rate, presence connections and tick time.
+- **SLOs and alerts:** deck, swipe and check-in p95; match notify latency; error rate; Elasticsearch fallback rate above 5 %; check-in `422` rate (a spike suggests cheating or a client bug).
+- **Cost:** pricing is per signal (about $0.06 per million spans ingested, $0.54 per million stored). A rough event estimate is $10–30. The 14-day trial needs no card; start it within 14 days of the event or budget about $50 and set a monthly cap.
+- **Risks:** the region is fixed when the organisation is created, there is no permanent free tier, and some features are beta.
 
-## 9. Observability: Dash0 (OpenTelemetry-native)
-**What it is:** an OpenTelemetry-native backend covering traces, logs, metrics, web/RUM events, session replay, and synthetic checks. It has PromQL-compatible check rules, built-in SLOs with burn-rate alerts, Terraform/CLI config-as-code, and an MCP server. The Oregon (us-west-2) region is available.
-
-**Wiring:**
-- **Backend:** `@opentelemetry/auto-instrumentations-node` (http, fastify, pg, undici for Elasticsearch) exports OTLP to an OTel Collector sidecar per task. The collector handles tail sampling, PII redaction, and batching, then forwards to the Dash0 Oregon endpoint with the auth token from AWS Secrets Manager. We add manual spans for `match.create`, `slot.reserve`, and `rank.query`, with attributes `match.created`, `slot.full`, and `es.fallback`.
-- **Browser:** `@dash0/sdk-web` in the PWA, using a **separate ingest-only token scoped to one dataset**, since browser tokens are public. CSP `connect-src` allows the Dash0 ingress host. W3C `traceparent` propagates from the browser to the API, so a slow swipe traces end to end, from tap to Postgres.
-- **Custom business metrics:** swipes/s, matches/min, meeting bookings, slot utilization per spot (an event-floor heatmap), and SSE connections.
-- **Synthetic checks** every 1 min on `/readyz` and `GET /me/deck` for a canary user.
-- **SLOs + alerts:**
-  - deck p95, swipe p95, match notify latency, error rate
-  - fast/slow burn-rate alerts
-  - Elasticsearch fallback-rate > 5 %
-  - slot `409` rate > 20 %, which means venue capacity is the problem, not code
-  - all defined via Terraform/`dash0` CLI in `infra/observability/`
-- **Cost control:** the collector keeps 100 % of error and slow traces and tail-samples 20 % of successful ones. Session replay is off, or 5 % if wanted.
-  - Rough event-day volume: about 40M spans before sampling, about 10M after, plus about 0.5M web events and modest metrics. That is roughly $10–30 for the event at list prices.
-  - The 14-day trial (no credit card) can cover the hackathon and a rehearsal **if started within 14 days of the event**. Otherwise budget about $50 and set a Dash0 monthly budget cap.
-
-**Trade-offs vs. alternatives:**
-| | Dash0 | Grafana Cloud | Datadog |
-|---|---|---|---|
-| Lock-in | Low: pure OTLP, swap by changing the endpoint | Low (OTel) | High (proprietary agent) |
-| Free tier | 14-day trial only | Permanent free tier | Trial |
-| Cost at our scale | Very low, per-signal pricing | Free to low | High |
-| SLOs/alerts | Built-in burn rate, PromQL rules | Yes (more assembly) | Yes |
-| AI/MCP for triage | MCP + Agent0 | Partial | Partial |
-| Risks | Newer vendor; region fixed at org creation (choose Oregon); browser SDK limit 4,096 events/10 min per session (fine); some features beta | | |
-
-**Choice: Dash0.** It fits best on SLOs, alerting, and RUM in one place at near-zero cost, and the instrumentation stays pure OpenTelemetry. **If the trial or budget is a blocker, switch to the Grafana Cloud free tier by changing the collector exporter only. No app code changes.**
-
-## 10. Repo layout (pnpm monorepo)
+## 11. Repo layout (pnpm monorepo)
 ```
-apps/web        React+TS+Vite PWA, R3F venue, swipe UI, Dash0 web SDK
-apps/api        Fastify routes; services: rank, match, booking, stream (SSE)
-apps/indexer    outbox → ES worker
-packages/shared zod schemas/types     packages/venue  spots.ts, geometry utils
-tools/          build-venue.ts, seed.ts (800 synthetic attendees), k6/
-infra/          terraform (VPC, ECS, ALB, RDS, CloudFront, Elastic Cloud, Dash0 rules), otel-collector.yaml
-docker-compose.yml  pg + elasticsearch + otel-collector for local dev
+apps/web          React + Vite game client
+  src/App.tsx       phase shell: lobby ↔ playing, demo drawer, match card
+  src/lobby/        sign-up form, 3D character preview, profile storage
+  src/game/         GameCanvas, Player (ecctrl), store, HUD, world/ (ground, scenery, booths, markers, bots),
+                    character/ (procedural + glTF), questMock.ts, mock.ts
+  public/characters/  README + optional player.glb
+packages/venue    @meetspace/venue: world data, booth slots, scoring, check-in rules, quiz, quest types, validation, tests
+apps/api          [proposed] Fastify routes; services: rank, match, booking, checkin, stream (SSE)
+apps/presence     [proposed] WebSocket presence service
+apps/indexer      [proposed] outbox → Elasticsearch worker
+packages/shared   [proposed] zod schemas and API types
+infra/            [proposed] Terraform (VPC, ECS, ALB, RDS, CloudFront, Elastic Cloud, Dash0 rules), otel-collector.yaml
+docker-compose.yml  [proposed] Postgres + Elasticsearch + OTel collector for local development
 ```
+The shared package is still named `@meetspace/venue` even though it now holds the Expo Park world.
 
-## 11. Delivery phases
-**Phase 0, hackathon day (~10 h, follows the MVP doc's hour plan):**
-- docker-compose with Postgres + Elasticsearch, seeding 15 profiles plus a reciprocal swipe
-- ranking with named queries and the atomic match transaction
-- floor 3 in 3D with 3 real spots (Atrium Lounge, Commons Table, Conference A) and the fly-to
-- Dash0 auto-instrumentation + web SDK, with one dashboard to show live swipes and matches in the demo
-- a SonarCloud scan
+## 12. Delivery phases
 
-Skip in Phase 0: auth, outbox (write to Elasticsearch directly), SSE (return `matched:true` inline).
+**Phase 0: hackathon demo**
+- Built: lobby, Expo Park, third-person 3D character, booth check-in with underdog bonus and leaderboard, matched-meetup waypoint, HUD, bots, world validation and tests (all on mocks).
+- Next, with teammates: swipe/match flow, ranking with named queries, the atomic match transaction, real join and check-in endpoints, a SonarCloud scan.
+- Skip for the demo: auth, outbox (write to Elasticsearch directly), real presence.
 
-**Phase 1, event-ready (~1–2 weeks):**
+**Phase 1: event-ready**
 - ECS Fargate + RDS + CloudFront + Elastic Cloud via Terraform
-- OTP auth, outbox indexer, SSE + LISTEN/NOTIFY, slot booking
-- both floors and the full spot inventory
-- popularity dampening, Postgres fallback, block/report, rate limits
-- Dash0 SLOs, alerts, and synthetic checks
-- on-call runbook: ES kill-switch → PG fallback, freeze bookings, broadcast banner, ECS rollback
-- k6 test at 2,000 virtual users
+- OTP auth, outbox indexer, SSE with `LISTEN/NOTIFY`, slot booking
+- Presence service with interest management, check-in verification from presence
+- Popularity dampening, Postgres fallback, block/report, rate limits
+- Dash0 SLOs, alerts and synthetic checks; on-call runbook (Elasticsearch kill switch, freeze bookings, broadcast banner, ECS rollback)
+- k6 test at 2,000 virtual users, plus a presence load test
 
-**Phase 2:** embeddings + hybrid RRF, opt-in zone presence, chat, organizer dashboard, follow-ups.
+**Phase 2:** embeddings and hybrid ranking, proximity chat or voice at meetups, organiser dashboard (visit funnel, bounty effect), keynote events, post-event follow-ups.
 
-## 12. Verification
-- **Unit:**
-  - query builder → explanation mapping
-  - spot-suggestion scoring
-  - SVG → meter coordinate transforms
-- **Concurrency (testcontainers Postgres):**
-  - 1,000 parallel reciprocal swipes must produce exactly 1 match per pair and exactly 2 inbox rows
-  - 200 parallel bookings on a capacity-3 slot must give 3 successes and 197 `409`s
-- **E2E (Playwright, 2 browsers):**
-  - full flow: join → swipe the seeded reciprocal user → the SSE match arrives in the other browser → book → camera target is near the spot anchor
-- **Load (k6, 2,000 virtual users, spike profile):** check §1 SLOs in Dash0. Confirm ECS autoscaling adds tasks before p95 breaches.
-- **Chaos:**
-  - stop an api task mid-test: no lost matches (inbox catch-up)
-  - block Elasticsearch: decks keep serving through the fallback, and the Dash0 fallback alert fires
-  - bad deploy (failing `/readyz`): the ECS circuit breaker auto-rolls back within ~5 min
-- **Telemetry hygiene:** grep exported spans in Dash0 for emails and names; expect zero.
-- **3D performance:** `venue.glb` ≤ 2 MB and first render < 3 s on a throttled low-end Android device.
-- **Demo:** the 2-minute script from the MVP doc runs end to end on venue-like Wi-Fi.
+## 13. Verification
+- **Unit [built]:** world validation, check-in proximity, quiz determinism, underdog scoring (monotonic, no divide-by-zero), career-fit matching.
+- **Unit [proposed]:** query builder → explanation mapping, spot-suggestion scoring.
+- **Concurrency [proposed] (testcontainers Postgres):** 1,000 parallel reciprocal swipes produce exactly one match per pair and two inbox rows; 200 parallel bookings on a capacity-3 slot give 3 successes and 197 `409`s; 100 parallel check-ins by one player on one booth give exactly one XP credit.
+- **E2E [proposed] (Playwright):** join → walk to a booth → check in → XP and leaderboard update; swipe the seeded reciprocal user → the match arrives in the other browser → the waypoint appears.
+- **Presence [proposed]:** 800 simulated clients at 10 Hz; verify snapshot rate, CPU, and the interest-management cap.
+- **Load [proposed] (k6, 2,000 virtual users, spike profile):** check §1 targets.
+- **Chaos [proposed]:** stop an API task mid-test (no lost matches); block Elasticsearch (decks keep serving); kill the presence task (clients rejoin); a failing `/readyz` deploy rolls back within about 5 minutes.
+- **Client performance [to do]:** frame rate and load time on a mid-range phone, with and without the optional character file.
+- **Demo:** the two-minute script in the MVP doc runs end to end.
 
-## Assumptions to confirm
-- Both floors' commons and atrium areas can be used for meetings, and capacities are confirmed with The Shop staff.
-- Dash0 trial is started within 14 days of the event, or about $50 is budgeted.
-- Link out to the official virtual tour rather than embedding it.
+## 14. Open decisions
+- **What happens when two matched players meet?** Options are text chat, proximity voice, or a link to an external video call. The demo only shows the waypoint and arrival.
+- **Virtual only, or hybrid?** If there is also a physical event, booth staff can still scan badges and the same XP rules apply.
+- **Character asset:** confirm the KayKit licence terms on the download page before shipping, and decide whether players can pick between several characters.
+- **Reconcile with the repo README.** It describes an organiser-controlled shrinking circle, Elasticsearch geo queries, and Kubernetes on Radar with Argo CD. The design here uses walk-up check-in and ECS Fargate. The team should agree which of those ideas stay.
+- **Prizes and fairness:** confirm leaderboard prize rules with the organisers, and decide how to handle shared accounts.
+- **Dash0:** start the trial within 14 days of the event, or budget about $50.
