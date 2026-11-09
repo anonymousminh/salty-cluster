@@ -13,6 +13,7 @@ export function DemoQuiz() {
 
   const questions = activeExperience.quiz;
   const question = questions[currentQuestion];
+  if (!question) return null;
 
   const handleSelectAnswer = (optionIndex: number) => {
     const newAnswers = [...answers];

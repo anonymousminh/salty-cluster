@@ -22,11 +22,8 @@ import { Beacon, GuideArrow, MeetupPoint } from './world/Markers';
 import { Scenery } from './world/Scenery';
 import { StormWall } from './world/StormWall';
 import { QUEST } from './theme';
-<<<<<<< HEAD
 import { useDemoStore } from './demo/store';
-=======
 import { track } from '../telemetry';
->>>>>>> origin/main
 
 export interface GameCanvasProps {
   playerName: string;

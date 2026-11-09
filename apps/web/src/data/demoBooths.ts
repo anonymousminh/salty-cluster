@@ -388,10 +388,12 @@ export function getDemoBoothMeta(boothId: string): DemoBoothMeta | undefined {
 // Map demo experiences to work with any booth by position
 export function getDemoExperienceForBooth(booth: { id: string; slotId: string; company: string }, index?: number): BoothDemoExperience | undefined {
   // Try to find by matching company/category
-  const metaByCompany = DEMO_BOOTH_META.find((m) => 
-    m.company.toLowerCase().includes(booth.company.toLowerCase()) || 
-    booth.company.toLowerCase().includes(m.company.toLowerCase().split(' ')[0])
-  );
+  const metaByCompany = DEMO_BOOTH_META.find((m) => {
+    const a = m.company.toLowerCase();
+    const b = booth.company.toLowerCase();
+    const first = a.split(' ')[0];
+    return a.includes(b) || (first !== undefined && b.includes(first));
+  });
   if (metaByCompany) {
     const exp = DEMO_EXPERIENCES.find((e) => e.boothId === metaByCompany.id);
     if (exp) return exp;
