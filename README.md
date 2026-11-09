@@ -35,5 +35,16 @@ Elastic · Radar · Dash0 · Sonar (Gitar)
 ## Use of AI tools
 [List the AI coding assistants used]
 
-## Team
-Salt Cluster: [names]
+## Team: Salt Cluster
+- [Name] – [role]
+- [Name] – [role]
+- [Name] – [role]
+- Jeovany Negócio – problem definition, user interviews, pitch and demo video
+
+## Use of AI tools
+We used Claude Code to help write code, tests and documentation. Every change went through a pull request, and the team reviewed, tested and can explain the architecture and decisions.
+
+## User research
+We interviewed an attendee and a sponsor at the event:
+- Sponsor: "You want to be as large as your competitors, even if you're like the underdog."
+- Attendee: "You're not going to find people randomly. You find some, but you miss others."
