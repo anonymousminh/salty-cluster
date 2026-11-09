@@ -1,0 +1,141 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: #0a1024;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.app {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.game-canvas {
+  position: absolute !important;
+  inset: 0;
+}
+
+.app button {
+  font: 600 13px system-ui, sans-serif;
+  cursor: pointer;
+}
+
+/* Welcome banner after entering */
+.app-welcome {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(8, 13, 32, 0.9);
+  border: 1px solid #22d3ee;
+  color: #e2e8f0;
+  box-shadow: 0 0 24px rgba(34, 211, 238, 0.35);
+  white-space: nowrap;
+  animation: app-drop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes app-drop {
+  from {
+    transform: translate(-50%, -16px);
+    opacity: 0;
+  }
+}
+
+/* Demo drawer (stand-in for the teammates' real screens) */
+.app-drawer {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 55;
+  width: 260px;
+}
+
+.app-drawer__toggle {
+  padding: 7px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: rgba(8, 13, 32, 0.85);
+  color: #e2e8f0;
+}
+
+.app-drawer__body {
+  margin-top: 6px;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(8, 13, 32, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+}
+
+.app-drawer__body button,
+.app-row button {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  text-align: left;
+}
+
+.app button.primary {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+
+.app button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.app-row button.active {
+  border-color: #22d3ee;
+}
+
+/* Match card */
+.app-match {
+  position: absolute;
+  left: 10px;
+  bottom: 120px;
+  z-index: 55;
+  width: min(360px, calc(100% - 32px));
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(8, 13, 32, 0.92);
+  border: 1px solid #a78bfa;
+  color: #e2e8f0;
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.5);
+}
+
+.app-match__title {
+  font-weight: 800;
+  color: #c4b5fd;
+  margin-bottom: 4px;
+}
+
+.app-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .app-drawer {
+    top: 62px;
+  }
+  .app-match {
+    bottom: 120px;
+  }
+}

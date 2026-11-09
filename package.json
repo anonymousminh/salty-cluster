@@ -1,0 +1,12 @@
+{
+  "name": "meetspace",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @meetspace/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "venue:validate": "pnpm --filter @meetspace/venue validate"
+  },
+  "packageManager": "pnpm@11.18.0"
+}
