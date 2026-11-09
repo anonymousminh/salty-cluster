@@ -22,6 +22,7 @@ import { Beacon, GuideArrow, MeetupPoint } from './world/Markers';
 import { Scenery } from './world/Scenery';
 import { StormWall } from './world/StormWall';
 import { QUEST } from './theme';
+import { useDemoStore } from './demo/store';
 import { track } from '../telemetry';
 
 export interface GameCanvasProps {
@@ -69,6 +70,7 @@ function World({ playerName, playerColor, booths, boothStats, visitedBoothIds, a
   const phase = useGame((s) => s.phase);
   const waypoint = useGame((s) => s.waypoint);
   const nearBoothId = useGame((s) => s.nearBoothId);
+  const startDemo = useDemoStore((s) => s.startDemo);
   const visited = new Set(visitedBoothIds);
   const statsReady = Object.keys(boothStats).length > 0;
 
@@ -107,7 +109,7 @@ function World({ playerName, playerColor, booths, boothStats, visitedBoothIds, a
       {target && <Beacon at={target} color={waypoint?.kind === 'spot' ? QUEST.meetup : QUEST.waypoint} />}
       {phase === 'playing' ? (
         <>
-          <Player color={playerColor} name={playerName} booths={booths} onTalk={onTalk} />
+          <Player color={playerColor} name={playerName} booths={booths} onTalk={onTalk} onStartDemo={(id) => startDemo(id)} />
           <GuideArrow target={target} color={waypoint?.kind === 'spot' ? QUEST.meetup : QUEST.waypoint} />
         </>
       ) : (

@@ -10,6 +10,19 @@ export const MAX_BONUS = 25;
 /** A booth whose current bonus is at least this is shown as a bounty on the map. */
 export const BOUNTY_THRESHOLD = 15;
 
+// === Interactive Booth Demo Scoring (configurable) ===
+export const DEMO_BOOTH_VISIT_XP = 10;
+export const DEMO_COMPLETE_XP = 100;
+export const DEMO_QUIZ_CORRECT_XP = 25;
+export const DEMO_FIRST_TIME_COMPLETION_BONUS = 25;
+
+export const DEFAULT_DEMO_POINTS_CONFIG = {
+  boothVisit: DEMO_BOOTH_VISIT_XP,
+  demoComplete: DEMO_COMPLETE_XP,
+  correctQuizAnswer: DEMO_QUIZ_CORRECT_XP,
+  firstTimeCompletionBonus: DEMO_FIRST_TIME_COMPLETION_BONUS,
+};
+
 export interface BoothStat {
   visits: number;
   bonus: number;

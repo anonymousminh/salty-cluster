@@ -1,0 +1,286 @@
+/* Demo Progress Panel */
+.demo-progress-panel {
+  position: absolute;
+  top: 70px;
+  right: 10px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.demo-progress-panel__toggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(99, 102, 241, 0.6);
+  background: rgba(8, 13, 32, 0.9);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+  transition: all 0.2s ease;
+}
+
+.demo-progress-panel__toggle:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: #6366f1;
+  box-shadow: 0 6px 30px rgba(99, 102, 241, 0.6);
+  transform: scale(1.1);
+}
+
+.demo-progress-panel__stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(8, 13, 32, 0.92);
+  border: 1px solid rgba(99, 102, 241, 0.5);
+  border-radius: 10px;
+  padding: 8px 12px;
+  backdrop-filter: blur(10px);
+}
+
+.demo-progress-panel__stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.demo-progress-panel__stat-icon {
+  font-size: 14px;
+}
+
+.demo-progress-panel__stat-value {
+  color: #a5b4fc;
+  font-weight: 700;
+}
+
+/* Demo Admin Panel */
+.demo-admin-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: demoFadeIn 0.3s ease-out;
+  backdrop-filter: blur(4px);
+}
+
+.demo-admin-panel {
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(8, 13, 32, 0.98) 100%);
+  border: 2px solid rgba(99, 102, 241, 0.6);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(99, 102, 241, 0.4);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.demo-admin-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.demo-admin-panel__title {
+  color: #e2e8f0;
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0;
+}
+
+.demo-admin-panel__close {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s ease;
+}
+
+.demo-admin-panel__close:hover {
+  background: rgba(239, 68, 68, 0.4);
+  color: #fff;
+}
+
+.demo-admin-panel__section {
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.demo-admin-panel__section-title {
+  color: #a5b4fc;
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 16px 0;
+}
+
+.demo-admin-panel__stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.demo-admin-panel__stat-box {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+}
+
+.demo-admin-panel__stat-label {
+  color: #94a3b8;
+  font-size: 11px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.demo-admin-panel__stat-value {
+  color: #e2e8f0;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.demo-admin-panel__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.demo-admin-panel__btn {
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.demo-admin-panel__btn--primary {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+}
+
+.demo-admin-panel__btn--primary:hover {
+  background: linear-gradient(135deg, #7c3aed 0%, #6366f1 100%);
+  box-shadow: 0 6px 25px rgba(99, 102, 241, 0.6);
+}
+
+.demo-admin-panel__btn--secondary {
+  background: rgba(30, 41, 59, 0.8);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.demo-admin-panel__btn--secondary:hover {
+  background: rgba(51, 65, 85, 0.9);
+  border-color: rgba(165, 180, 252, 0.6);
+}
+
+.demo-admin-panel__btn--danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.demo-admin-panel__btn--danger:hover {
+  background: rgba(239, 68, 68, 0.4);
+  color: #fff;
+  border-color: #ef4444;
+}
+
+.demo-admin-panel__leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.demo-admin-panel__lb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.demo-admin-panel__lb-rank {
+  color: #a5b4fc;
+  font-weight: 800;
+  width: 30px;
+}
+
+.demo-admin-panel__lb-avatar {
+  font-size: 18px;
+}
+
+.demo-admin-panel__lb-name {
+  color: #e2e8f0;
+  flex: 1;
+  font-weight: 600;
+}
+
+.demo-admin-panel__lb-points {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.demo-admin-panel__lb-stats {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.demo-admin-panel__footer {
+  padding: 16px 24px;
+}
+
+.demo-admin-panel__note {
+  color: #94a3b8;
+  font-size: 12px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .demo-progress-panel {
+    top: 60px;
+    right: 6px;
+  }
+  .demo-admin-panel {
+    width: 95%;
+    max-height: 95vh;
+  }
+  .demo-admin-panel__stats-grid {
+    grid-template-columns: 1fr;
+  }
+}

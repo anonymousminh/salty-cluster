@@ -12,7 +12,10 @@ export interface LeaderboardEntry {
   /** Display name chosen by the attendee, or "Anonymous" if they opted out. */
   name: string;
   xp: number;
+  totalPoints?: number;
   booths: number;
+  demosCompleted?: number;
+  avatar?: string;
   /** XP earned from underdog bonuses (the "underdog hunter" tag goes to the top one). */
   bonusXp: number;
   isMe?: boolean;

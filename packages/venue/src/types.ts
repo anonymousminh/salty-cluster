@@ -60,3 +60,94 @@ export interface WorldData {
   obstacles: Obstacle[];
   spots: Spot[];
 }
+
+// === Booth Demo Experience Types ===
+
+export type DemoContentType = 'text' | 'image' | 'video' | 'screenshots' | 'animated' | 'interactive';
+
+export interface DemoSlide {
+  id: string;
+  type: DemoContentType;
+  title?: string;
+  content?: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  screenshots?: string[];
+  animation?: 'fade' | 'slide' | 'zoom' | 'typewriter' | 'none';
+  duration?: number; // ms for this slide, if auto-advance
+  background?: string;
+  bullets?: string[];
+  callToAction?: string;
+}
+
+export interface DemoQuizQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation?: string;
+}
+
+export interface DemoPointsConfig {
+  boothVisit: number;
+  demoComplete: number;
+  correctQuizAnswer: number;
+  firstTimeCompletionBonus: number;
+}
+
+export interface BoothDemoExperience {
+  boothId: string;
+  companyName: string;
+  companyLogo?: string;
+  productName: string;
+  productDescription: string;
+  boothDescription: string;
+  category: string;
+  duration: number; // ms, default 30000
+  slides: DemoSlide[];
+  quiz: DemoQuizQuestion[];
+  pointsConfig: DemoPointsConfig;
+}
+
+export interface DemoProgressEntry {
+  boothId: string;
+  visited: boolean;
+  visitedAt?: number;
+  demoStartedAt?: number;
+  demoCompleted: boolean;
+  demoCompletedAt?: number;
+  quizAnswered: boolean;
+  quizCorrect: boolean;
+  quizAnswers: number[];
+  pointsEarned: number;
+  scoreBreakdown: {
+    boothVisit: number;
+    demoComplete: number;
+    quizBonus: number;
+    firstTimeBonus: number;
+  };
+}
+
+export interface PlayerDemoStats {
+  boothsVisited: number;
+  demosCompleted: number;
+  totalPoints: number;
+  quizzesCorrect: number;
+  completionPercentage: number;
+  totalBooths: number;
+}
+
+export interface DemoLeaderboardEntry {
+  rank: number;
+  name: string;
+  avatar?: string;
+  totalPoints: number;
+  boothsVisited: number;
+  demosCompleted: number;
+  isMe?: boolean;
+}
+
+export interface DemoLeaderboard {
+  entries: DemoLeaderboardEntry[];
+  me?: DemoLeaderboardEntry;
+}

@@ -23,6 +23,8 @@ import { LeaderboardPanel, Toasts, XpBar } from './Panels';
 import { ZoneBanner } from './ZoneBanner';
 import type { CheckinOutcome } from '../quest';
 import './hud.css';
+import { useDemoStore } from '../demo/store';
+import { getDemoExperience, getDemoExperienceForBooth } from '../../data/demoBooths';
 
 export interface GameHudProps {
   booths: Booth[];
@@ -47,6 +49,10 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
   const arrivedSpotId = useGame((s) => s.arrivedSpotId);
   const openBooth = useGame((s) => s.openBooth);
   const setWaypoint = useGame((s) => s.setWaypoint);
+  const startDemo = useDemoStore((s) => s.startDemo);
+  const isBoothVisited = useDemoStore((s) => s.isBoothVisited);
+  const isBoothCompleted = useDemoStore((s) => s.isBoothCompleted);
+  const demoStats = useDemoStore((s) => s.stats);
   const touch = useIsTouch();
   const visited = useMemo(() => new Set(progress?.visitedBoothIds ?? []), [progress]);
 
@@ -89,13 +95,28 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
         <div className="hud-arrived">📍 You made it to {getSpot(arrivedSpotId)?.name}! Your match is on the way.</div>
       )}
 
-      {nearBooth && !open && (
-        <button className="hud-prompt" onClick={() => openBooth(nearBooth.id)}>
-          <kbd>{touch ? 'TAP' : 'E'}</kbd> Talk to <b>{nearBooth.company}</b>
-          {!visited.has(nearBooth.id) &&
-            (inStorm(nearBooth.id) ? <span className="xp storm">storm · 0 XP</span> : <span className="xp">+{BASE_XP + (boothStats[nearBooth.id]?.bonus ?? 0)} XP</span>)}
-        </button>
-      )}
+      {nearBooth && !open && (() => {
+        const boothIndex = booths.findIndex((b) => b.id === nearBooth.id);
+        const demoExp = getDemoExperience(nearBooth.id) || getDemoExperienceForBooth(nearBooth, boothIndex >= 0 ? boothIndex : undefined);
+        const demoVisited = isBoothVisited(nearBooth.id);
+        const completed = isBoothCompleted(nearBooth.id);
+        if (demoExp || (boothIndex >= 0 && boothIndex < 8)) {
+          return (
+            <button className="hud-prompt" onClick={() => startDemo(nearBooth.id, nearBooth)}>
+              <kbd>{touch ? 'TAP' : 'E'}</kbd> {completed ? 'Replay' : demoVisited ? 'Continue' : 'Start'} Demo: <b>{nearBooth.company}</b>
+              {!completed && <span className="xp">+135 XP</span>}
+              {completed && <span className="xp">✓ Completed</span>}
+            </button>
+          );
+        }
+        return (
+          <button className="hud-prompt" onClick={() => openBooth(nearBooth.id)}>
+            <kbd>{touch ? 'TAP' : 'E'}</kbd> Talk to <b>{nearBooth.company}</b>
+            {!visited.has(nearBooth.id) &&
+              (inStorm(nearBooth.id) ? <span className="xp storm">storm · 0 XP</span> : <span className="xp">+{BASE_XP + (boothStats[nearBooth.id]?.bonus ?? 0)} XP</span>)}
+          </button>
+        );
+      })()}
 
       {open && (
         <BoothDialog
