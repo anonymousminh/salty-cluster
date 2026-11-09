@@ -17,10 +17,13 @@ Consequences for the design:
 
 | Area | Status |
 |---|---|
-| World data, 3D game client, lobby, HUD, booth check-in flow, scoring and quiz helpers | **Built** in `apps/web` and `packages/venue`, running against mocks. 12 unit tests pass. |
-| Backend (Postgres, API, SSE), Elasticsearch ranking, swipe/match screens | **Designed here, not built.** Teammates' work. |
-| Presence (multiplayer) | **Designed here, not built.** The client currently shows 12 simulated attendees. |
-| Auth, observability, infrastructure, load tests | **Designed here, not built.** |
+| World data, 3D game client, lobby, HUD, booth check-in flow, scoring and quiz helpers | **Built** in `apps/web` and `packages/venue`. Runs against the real API, or mocks offline. |
+| Booth quest API: join, booths, stats, check-in (walk-up or QR), progress, leaderboard | **Built** in `apps/api` on **Elasticsearch** (its only store for the quest; see `docs/elasticsearch.md`). |
+| Battle-royale layer: organizer circle, storm, scheduled shrinks, organizer console, big screen | **Built** (`packages/venue/src/battle.ts`, `apps/api`, `apps/console`). |
+| Observability: OTel traces/metrics/logs → Dash0, browser RUM | **Built** (`packages/telemetry`, collector config). Dashboards/SLOs are set up in Dash0 (`docs/observability.md`). |
+| Infrastructure: Kubernetes + Argo CD (managed with Radar), CI | **Built** (`deploy/`, `.github/workflows/ci.yml`; see `docs/deployment-guide.md`). |
+| Swipe/match, Elasticsearch people ranking, Postgres for matching/booking, SSE | **Designed here, not built.** |
+| Presence (multiplayer) | **Designed here, not built.** The client shows simulated attendees. |
 
 Everything below marks which parts are built (**[built]**) and which are proposals (**[proposed]**).
 
@@ -256,6 +259,6 @@ The shared package is still named `@meetspace/venue` even though it now holds th
 - **What happens when two matched players meet?** Options are text chat, proximity voice, or a link to an external video call. The demo only shows the waypoint and arrival.
 - **Virtual only, or hybrid?** If there is also a physical event, booth staff can still scan badges and the same XP rules apply.
 - **Character asset:** confirm the KayKit licence terms on the download page before shipping, and decide whether players can pick between several characters.
-- **Reconcile with the repo README.** It describes an organiser-controlled shrinking circle, Elasticsearch geo queries, and Kubernetes on Radar with Argo CD. The design here uses walk-up check-in and ECS Fargate. The team should agree which of those ideas stay.
+- **Reconciled with the repo README (saigirish branch):** the booth quest keeps walk-up check-in and adds the organizer's shrinking circle (Elasticsearch `geo_distance`), QR check-in for physical booths, and runs on Kubernetes with Argo CD and Radar instead of ECS Fargate. The §-level hosting and Postgres choices above still apply to the not-yet-built matching features.
 - **Prizes and fairness:** confirm leaderboard prize rules with the organisers, and decide how to handle shared accounts.
 - **Dash0:** start the trial within 14 days of the event, or budget about $50.

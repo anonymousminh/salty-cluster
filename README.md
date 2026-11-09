@@ -12,28 +12,88 @@ What we heard today:
 Passport games try to fix this, but they send everyone to the same booths and count scans, not demos.
 
 ## Our solution
-A web app that turns the expo floor into a battle royale:
-- The organizer controls a shrinking circle that guides people to where the conference needs them.
-- Attendees check in at booths with a QR code and answer one question about the demo.
-- Least-visited booths give bonus points, so traffic spreads across the floor.
-- Live leaderboard, with prizes for the top 3 attendee.
+**MeetSpace**: the expo floor as a battle royale you can play in 3D or walk in real life.
+- The organizer controls a **shrinking circle** that guides people to where the conference needs them. Booths outside it are "in the storm" and pay nothing.
+- Attendees check in at booths by walking up in the 3D world (or scanning the QR code at a physical booth) and answering one question about the demo.
+- **Least-visited booths pay an underdog bonus**, so traffic spreads across the floor.
+- Live leaderboard, with prizes for the top 3 attendees.
+
+| 3D game (Expo Park) | Organizer console |
+|---|---|
+| ![3D game](docs/screenshots/game.png) | ![Organizer console](docs/screenshots/organizer.png) |
+
+Big screen next to the stage: [docs/screenshots/screen.png](docs/screenshots/screen.png)
+
+### Scoring (`packages/venue`, shared by game, console and server)
+| | XP |
+|---|---|
+| First visit to a booth inside the circle | 10 |
+| Underdog bonus (booth has fewer visits than average) | up to +25 |
+| Booth in the storm | 0, and the booth isn't used up |
 
 ## Architecture
-- Frontend: [TBD]
-- Backend: [TBD]
-- Elasticsearch: booths as geo-points, circle as a geo query, leaderboard and bonus points with aggregations
-- Kubernetes on Radar, deployed with Argo CD
-- OpenTelemetry + Dash0 for traces, logs and metrics
-- Gitar reviews every pull request
+- **Frontend:**
+  - `apps/web`: the 3D game (React Three Fiber, Rapier physics, ecctrl character controller). Lobby, Expo Park, walk-up check-in, HUD with storm wall, minimap circle and shrink countdown.
+  - `apps/console`: organizer console (move/shrink/schedule the circle, stats, printable booth QR codes), big screen, and QR check-in for physical booths.
+- **Backend:** `apps/api`, Node 22 + Fastify 5 + TypeScript.
+- **Elasticsearch:** booths as geo-points, the circle as a `geo_distance` query, the leaderboard and underdog bonus from aggregations. It is the only datastore. See [docs/elasticsearch.md](docs/elasticsearch.md).
+- **Kubernetes on Radar, deployed with Argo CD:** [docs/kubernetes.md](docs/kubernetes.md)
+- **OpenTelemetry + Dash0** for traces, logs and metrics (plus RUM in the browser): [docs/observability.md](docs/observability.md)
+- **Gitar reviews every pull request:** [docs/gitar.md](docs/gitar.md)
+
+```
+ browser ──► web (nginx): 3D game at /, console at /console/ ──/api──► api (Fastify) ──► Elasticsearch
+    │ RUM                                                                │ OTLP
+    └─────────────► Dash0 ◄──────────── OTel Collector ◄─────────────────┘  (+ k8s events, pod metadata)
+ GitHub (Gitar review, CI) ──► ghcr.io images ──► Argo CD ──► Kubernetes namespace (Radar)
+```
+
+Game design and world: [docs/venue-integration.md](docs/venue-integration.md), [docs/system-design.md](docs/system-design.md).
 
 ## How to run it
-[Setup steps]
+Requires Node 22 and pnpm 11 (`corepack enable`).
+
+### Quickest: no Docker, in-memory API (dev only)
+```bash
+pnpm install
+pnpm dev:memory          # API on :8080 with an in-memory store (data resets on restart)
+pnpm dev                 # 3D game on http://localhost:5173
+pnpm dev:console         # console on http://localhost:5174/console/
+```
+In the console, open **Organizer** (token `dev-organizer`) and press **▶ Start**. Then play at http://localhost:5173 (`?demo=booth` jumps straight to a booth).
+
+### With Elasticsearch
+```bash
+cp .env.example .env
+docker compose up -d     # Elasticsearch :9200, OTel Collector :4318
+pnpm es:setup && pnpm seed
+pnpm dev:api             # API on :8080, backed by Elasticsearch
+pnpm dev                 # game
+```
+
+### Simulated attendees (demo traffic and load test)
+```bash
+API_URL=http://localhost:8080 pnpm simulate -- --players 60 --seconds 90 --follow 0.8
+```
+Bots chase the underdog bonus with probability `--follow`. Compare the printed **spread** with `--follow 0`: that is the bonus spreading traffic, measured.
+
+### Tests
+```bash
+pnpm typecheck && pnpm test   # venue rules + API (14 tests against an in-memory Elasticsearch stand-in)
+pnpm e2e                      # Playwright: 3D game and console against the real API code, with axe checks
+pnpm smoke                    # full game against a real Elasticsearch (resets indices!)
+```
+
+### Hosting end to end
+**[docs/deployment-guide.md](docs/deployment-guide.md)** covers everything from prerequisites to a public URL: GitHub and Gitar, Elastic Cloud, Dash0, Kubernetes with Argo CD, Radar, and a game-day runbook. It also has a checklist of what each sponsor tool needs from the team.
 
 ## Tracks
 Elastic · Radar · Dash0 · Sonar (Gitar)
 
 ## Use of AI tools
-[List the AI coding assistants used]
+- Claude Code: 3D game workstream, backend, console, tests, Kubernetes/CI and docs, landed through reviewed pull requests
+- Gitar: AI code review and CI failure fixes on every PR
+- [Add any other assistants the team used]
 
 ## Team
 Salt Cluster: [names]

@@ -1,0 +1,29 @@
+{
+  "name": "@meetspace/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "es:setup": "tsx scripts/setup-es.ts",
+    "seed": "tsx scripts/seed.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "simulate": "tsx scripts/simulate.ts",
+    "dev:memory": "tsx watch src/dev/memory-server.ts"
+  },
+  "dependencies": {
+    "@elastic/elasticsearch": "8.19.2",
+    "@meetspace/telemetry": "workspace:*",
+    "@meetspace/venue": "workspace:*",
+    "@opentelemetry/api": "1.10.0",
+    "fastify": "5.12.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.9.0",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3",
+    "vitest": "2.1.8"
+  }
+}

@@ -11,6 +11,7 @@ import {
   type CareerProfile,
 } from '@meetspace/venue';
 import { useGame } from '../store';
+import type { CheckinOutcome } from '../quest';
 
 interface Props {
   booth: Booth;
@@ -18,7 +19,10 @@ interface Props {
   stat?: BoothStat;
   visited: boolean;
   profile?: CareerProfile;
-  onCheckIn: (boothId: string) => void;
+  /** Outside the battle-royale circle: no XP until the circle covers it. */
+  inStorm?: boolean;
+  /** Sends the answer + dwell to the server, which re-checks both. */
+  onCheckIn: (boothId: string, quizAnswer: number, dwellMs: number) => Promise<CheckinOutcome>;
   onClose: () => void;
 }
 
@@ -26,13 +30,15 @@ interface Props {
  * Talking to a booth: company pitch + hiring roles, a short "chat" timer (dwell), then a
  * one-tap question. Answering correctly checks you in for XP (underdog bonus included).
  */
-export function BoothDialog({ booth, allBooths, stat, visited, profile, onCheckIn, onClose }: Props) {
+export function BoothDialog({ booth, allBooths, stat, visited, profile, inStorm, onCheckIn, onClose }: Props) {
   const dwell = useGame((s) => s.dwell[booth.id] ?? 0);
   const near = useGame((s) => s.nearBoothId === booth.id);
   const quiz = useMemo(() => boothQuiz(booth, allBooths), [booth, allBooths]);
   const [picked, setPicked] = useState<number | null>(null);
   const [retryAt, setRetryAt] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [sending, setSending] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const fit = careerFit(profile, booth.hiring, booth.tags);
   const bonus = stat?.bonus ?? 0;
   const chatted = dwell >= DWELL_SECONDS;
@@ -52,7 +58,15 @@ export function BoothDialog({ booth, allBooths, stat, visited, profile, onCheckI
     if (!chatted || waiting) return;
     setPicked(i);
     if (i === quiz.answerIndex) {
-      onCheckIn(booth.id);
+      setSending(true);
+      setServerError(null);
+      void onCheckIn(booth.id, i, dwell * 1000).then((r) => {
+        setSending(false);
+        if (!r.ok) {
+          setServerError(r.message);
+          setPicked(null);
+        }
+      });
     } else {
       setRetryAt(Date.now() + QUIZ_RETRY_SECONDS * 1000);
       window.setTimeout(() => setPicked(null), QUIZ_RETRY_SECONDS * 1000);
@@ -85,10 +99,16 @@ export function BoothDialog({ booth, allBooths, stat, visited, profile, onCheckI
         <div className="hud-dialog__done">✓ Checked in. You already collected XP here.</div>
       ) : (
         <>
-          <div className="hud-dialog__xp">
-            Check-in reward: <b className={isBounty(stat) ? 'gold' : ''}>+{BASE_XP + bonus} XP</b>
-            {bonus > 0 && <small> (incl. +{bonus} underdog bonus)</small>}
-          </div>
+          {inStorm ? (
+            <div className="hud-dialog__storm" role="alert">
+              ⚠ This booth is in the storm: no XP until the circle covers it. Head inside the circle!
+            </div>
+          ) : (
+            <div className="hud-dialog__xp">
+              Check-in reward: <b className={isBounty(stat) ? 'gold' : ''}>+{BASE_XP + bonus} XP</b>
+              {bonus > 0 && <small> (incl. +{bonus} underdog bonus)</small>}
+            </div>
+          )}
           {!chatted ? (
             <div className="hud-dialog__chat">
               <div className="bar">
@@ -104,11 +124,17 @@ export function BoothDialog({ booth, allBooths, stat, visited, profile, onCheckI
                   key={i}
                   className={picked === i ? (i === quiz.answerIndex ? 'right' : 'wrong') : ''}
                   onClick={() => answer(i)}
-                  disabled={waiting}
+                  disabled={waiting || sending}
                 >
                   {o}
                 </button>
               ))}
+              {sending && <div className="retry">Checking in…</div>}
+              {serverError && (
+                <div className="retry" role="alert">
+                  {serverError}
+                </div>
+              )}
               {waiting && <div className="retry">Not quite. Listen to the pitch and try again in {Math.ceil((retryAt - now) / 1000)}s</div>}
             </div>
           )}

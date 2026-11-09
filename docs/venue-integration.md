@@ -56,21 +56,38 @@ Trees come from a seeded generator, so they are the same on every machine.
 | Piece | Owner |
 |---|---|
 | World data, 3D game, lobby, HUD, check-in rules, scoring/quiz helpers, mocks | 3D/game workstream (done) |
-| Real join API behind the lobby, auth, swipe/match screens | Frontend + backend |
-| `POST /booths/:id/checkin`, `booth_visits`, leaderboard, SSE, presence channel | Backend |
-| Sponsor list and booth-slot assignment | Organizers |
+| Booth quest API on Elasticsearch: join, booths, stats, check-in, progress, leaderboard (`apps/api`) | Backend (done) |
+| Battle-royale circle, scheduled shrinks, organizer console, QR check-in for physical booths (`apps/console`) | Backend (done) |
+| Swipe/match screens, SSE, presence channel (server-side dwell checks) | Next |
+| Sponsor list and booth-slot assignment | Organizers (`DEMO_SPONSORS` in `packages/venue/src/sponsors.ts` for now) |
 
-## Contract (types exported by `@meetspace/venue`)
+The game talks to the API when `/api` answers and falls back to the offline mocks otherwise (`?offline` forces it). The **☰ Demo** drawer shows which mode is active.
+
+## Contract (implemented by `apps/api`, types exported by `@meetspace/venue`)
+
+Player calls send `Authorization: Bearer <sessionId>` (from join; the server stores only a salted hash).
 
 ```ts
-POST /events/:id/join     { name, role, lookingFor[], skills[], color, showOnLeaderboard } → session
-GET  /booths              → Booth[]      { id, slotId (b01…b16), company, color, tagline, hiring?, tags? }
-GET  /booths/stats        → BoothStats   Record<boothId, { visits, bonus }>   (computeBoothStats)
-POST /booths/:id/checkin  { dwellMs, quizAnswer } → { xpGained, base, bonus } | 409 already_visited | 422 not_eligible
-GET  /me/progress         → Progress     { xp, rank, visitedBoothIds, totalBooths }
-GET  /leaderboard?limit=10 → Leaderboard { entries: { rank, name, xp, booths, bonusXp, isMe? }[], me? }
-SSE  booth.visited / leaderboard.changed
-WS   presence (future)    { id, x, z, heading } at ~10 Hz per zone
+POST /api/join                 JoinRequest { name, role?, lookingFor?, skills?, color?, showOnLeaderboard? } → Session { sessionId, name }
+GET  /api/booths               → Booth[]      sorted by slot (the quiz is generated from this order on both sides)
+GET  /api/booths/stats         → BoothStats   Record<boothId, { visits, bonus }>   (computeBoothStats)
+GET  /api/game                 → GameView     { state: { status, round, circle, nextShrink? }, inZoneBoothIds }
+POST /api/booths/:id/checkin   CheckinRequest { quizAnswer, dwellMs? | code? }
+                               → CheckinResponse { xpGained, base, bonus, totalXp }
+                               | 409 already_visited | 422 not_eligible { reason: dwell_too_short | wrong_answer | in_storm | bad_code | game_not_live }
+GET  /api/me/progress          → Progress     { xp, rank, visitedBoothIds, totalBooths }
+GET  /api/leaderboard?limit=10 → Leaderboard  { entries: { rank, name, xp, booths, bonusXp, isMe? }[], me? }
+
+Organizer (header x-organizer-token):
+PUT  /api/organizer/circle          { center: Vec2, radius }
+POST /api/organizer/shrink          { factor, target?: Vec2 }
+POST /api/organizer/schedule-shrink { inSeconds, factor, target? }   DELETE to cancel
+POST /api/organizer/status          { status: lobby | live | ended }
+POST /api/organizer/reset
+GET  /api/organizer/booths          → OrganizerBooth[] (with QR codes)
+GET  /api/organizer/stats           → OrganizerStats
+
+Next: SSE booth.visited / leaderboard.changed (the game polls every 3 s for now), WS presence { id, x, z, heading }.
 ```
 
 **Check-in rules** (`interaction.ts`, shared so client and server agree):
@@ -80,10 +97,11 @@ WS   presence (future)    { id, x, z, heading } at ~10 Hz per zone
 - A wrong answer locks the quiz for `QUIZ_RETRY_SECONDS` (5 s).
 - The server must re-verify dwell from presence pings. Client timers are UX only.
 
-**Scoring:** use `scoring.ts` on the server.
+**Scoring:** the server uses `scoring.ts` + `battle.ts` (`checkinXp`).
 - XP for a visit = `BASE_XP (10) + underdogBonus(visits, avgVisits)`, where the bonus ranges from 0 to 25.
 - Bounty threshold: 15.
 - One credit per booth per attendee.
+- Battle royale: booths outside the organizer's circle ("the storm") pay 0 XP and are not used up.
 
 **Privacy:** the leaderboard shows the attendee's display name, or "Anonymous" if they opted out. Bots stand in for other players. A real presence feed should be opt-in.
 

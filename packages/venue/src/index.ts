@@ -9,6 +9,9 @@ export * from './interaction';
 export * from './scoring';
 export * from './quest';
 export * from './validate';
+export * from './battle';
+export * from './api';
+export * from './sponsors';
 
 /** Every bookable meetup point. Seed `spots`/`slots` tables from this list. */
 export const ALL_SPOTS: Spot[] = SPOTS;
