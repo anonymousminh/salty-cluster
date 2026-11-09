@@ -84,8 +84,8 @@ pnpm e2e                      # Playwright: 3D game and console against the real
 pnpm smoke                    # full game against a real Elasticsearch (resets indices!)
 ```
 
-### Kubernetes
-See [docs/kubernetes.md](docs/kubernetes.md). In short: create the `salty-secrets` secret, then `kubectl apply -n argocd -f deploy/argocd/application.yaml`.
+### Hosting end to end
+**[docs/deployment-guide.md](docs/deployment-guide.md)** covers everything from prerequisites to a public URL: GitHub and Gitar, Elastic Cloud, Dash0, Kubernetes with Argo CD, Radar, and a game-day runbook. It also has a checklist of what each sponsor tool needs from the team.
 
 ## Tracks
 Elastic · Radar · Dash0 · Sonar (Gitar)
