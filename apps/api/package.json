@@ -14,7 +14,7 @@
     "dev:memory": "tsx watch src/dev/memory-server.ts"
   },
   "dependencies": {
-    "@elastic/elasticsearch": "9.5.1",
+    "@elastic/elasticsearch": "8.19.2",
     "@meetspace/telemetry": "workspace:*",
     "@meetspace/venue": "workspace:*",
     "@opentelemetry/api": "1.10.0",
