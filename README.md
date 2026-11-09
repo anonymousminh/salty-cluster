@@ -1,10 +1,15 @@
 # Salty-Cluster – Battle Royale for Conference Expo Floors
 
 ## The problem
-At big tech conferences, attendees wander the expo floor and booths compete for attention.
-> "[Quote from the attendee we interviewed]"
+At big tech conferences, the biggest sponsors win attention with huge booths, branded staff and great swag. Smaller sponsors and open-source projects get lost on the floor, and attendees miss them.
 
-Passport games send everyone to the same booths.
+What we heard today:
+- Attendee: "If they have nice swag, then I'm stopping by... you never know who has the coolest swag until you see someone else with the swag."
+- Attendee: "You're not going to find people randomly. You find some, but you miss others."
+- Sponsor: "You want to be as large as your competitors, even if you're like the underdog."
+- Sponsors don't measure foot traffic. They measure demos, then proofs of concept, then customers.
+
+Passport games try to fix this, but they send everyone to the same booths and count scans, not demos.
 
 ## Our solution
 A web app that turns the expo floor into a battle royale:
