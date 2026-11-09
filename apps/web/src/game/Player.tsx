@@ -10,6 +10,8 @@ import { Character } from './character/Character';
 import type { MotionState } from './character/Chibi';
 import { NameTag } from './world/NameTag';
 import { isInputLocked, useGame } from './store';
+import { useDemoStore } from './demo/store';
+import { getDemoExperience } from '../data/demoBooths';
 
 export const KEYBOARD_MAP = [
   { name: 'forward', keys: ['ArrowUp', 'KeyW'] },
@@ -35,10 +37,12 @@ export interface PlayerProps {
   booths: Booth[];
   /** Called when the attendee presses Talk (E / button) near a booth. */
   onTalk: (boothId: string) => void;
+  /** Called to start demo experience. */
+  onStartDemo?: (boothId: string) => void;
 }
 
 /** The attendee you control: physics capsule + 3D character + third-person camera. */
-export function Player({ color, name, booths, onTalk }: PlayerProps) {
+export function Player({ color, name, booths, onTalk, onStartDemo }: PlayerProps) {
   const ecctrl = useRef<EcctrlHandle>(null);
   const motion = useRef<MotionState>({ gait: 0, airborne: false });
   const [, getKeys] = useKeyboardControls<Controls>();
@@ -50,7 +54,8 @@ export function Player({ color, name, booths, onTalk }: PlayerProps) {
     const c = ecctrl.current;
     if (!c?.body) return; // rigid body not created yet
     const game = useGame.getState();
-    const locked = isInputLocked(game);
+    const demoState = useDemoStore.getState();
+    const locked = isInputLocked(game) || demoState.demoPhase === 'playing' || demoState.demoPhase === 'quiz';
     if (game.teleportTo && c.body) {
       c.body.setTranslation({ x: game.teleportTo[0], y: 1.5, z: game.teleportTo[1] }, true);
       c.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -92,9 +97,16 @@ export function Player({ color, name, booths, onTalk }: PlayerProps) {
       game.setNearBooth(null);
     }
 
-    // Talk (edge-triggered).
+    // Talk/Demo (edge-triggered).
     const talk = k.talk || !!buttons.talk;
-    if (talk && !talkLatch.current && near && !game.openBoothId && game.phase === 'playing') onTalk(near.item.id);
+    if (talk && !talkLatch.current && near && !game.openBoothId && game.phase === 'playing') {
+      const demoExp = getDemoExperience(near.item.id);
+      if (demoExp && onStartDemo) {
+        onStartDemo(near.item.id);
+      } else {
+        onTalk(near.item.id);
+      }
+    }
     talkLatch.current = talk;
 
     if (t - lastPublish.current > 0.1) {

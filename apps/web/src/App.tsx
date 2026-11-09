@@ -8,6 +8,11 @@ import { useGame } from './game/store';
 import { Lobby } from './lobby/Lobby';
 import { EMPTY_PROFILE, leaderboardName, loadProfile, saveProfile, toCareerProfile, type PlayerProfile } from './lobby/profile';
 import './app.css';
+import { DemoExperience } from './game/demo/DemoExperience';
+import { DemoQuiz } from './game/demo/DemoQuiz';
+import { useDemoStore } from './game/demo/store';
+import { DemoProgressUI } from './game/demo/DemoProgressUI';
+import { DemoAdminPanel } from './game/demo/DemoAdminPanel';
 
 const DEMO_PROFILE: PlayerProfile = {
   name: 'Alex',
@@ -178,8 +183,14 @@ export function App() {
               )}
             </div>
           )}
+          
+          <DemoProgressUI />
+          <DemoAdminPanel />
         </>
       )}
+      
+      <DemoExperience />
+      <DemoQuiz />
     </div>
   );
 }
