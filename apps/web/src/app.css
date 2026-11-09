@@ -139,3 +139,9 @@ body,
     bottom: 120px;
   }
 }
+
+.app-drawer__mode {
+  font-size: 12px;
+  opacity: 0.85;
+  padding: 2px 0 4px;
+}

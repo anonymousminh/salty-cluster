@@ -841,3 +841,38 @@
     transform: translateX(-50%);
   }
 }
+
+/* ---- Battle-royale zone ---- */
+.hud-zone {
+  position: absolute;
+  top: 104px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  pointer-events: none;
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hud-zone.urgent b { color: #fca5a5; }
+.hud-zone.ended { border-color: #fbbf24; }
+.hud-prompt .xp.storm { background: #7f1d1d; color: #fecaca; }
+.hud-dialog__storm {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
