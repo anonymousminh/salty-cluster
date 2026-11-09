@@ -1,0 +1,16 @@
+{
+  "mappings": {
+    "properties": {
+      "@timestamp":       { "type": "date" },
+      "player_id":        { "type": "keyword" },
+      "leaderboard_name": { "type": "keyword" },
+      "booth_id":         { "type": "keyword" },
+      "location":         { "type": "geo_point" },
+      "method":           { "type": "keyword" },
+      "base":             { "type": "integer" },
+      "bonus":            { "type": "integer" },
+      "xp":               { "type": "integer" },
+      "round":            { "type": "integer" }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "mappings": {
+    "properties": {
+      "state":       { "type": "object", "enabled": false },
+      "circle_geo":  { "type": "geo_point" },
+      "radius_m":    { "type": "float" },
+      "updated_at":  { "type": "date" }
+    }
+  }
+}
