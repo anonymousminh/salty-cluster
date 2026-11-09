@@ -16,7 +16,7 @@ A web app that turns the expo floor into a battle royale:
 - The organizer controls a shrinking circle that guides people to where the conference needs them.
 - Attendees check in at booths with a QR code and answer one question about the demo.
 - Least-visited booths give bonus points, so traffic spreads across the floor.
-- Live leaderboard, with prizes for the top 3.
+- Live leaderboard, with prizes for the top 3 attendee.
 
 ## Architecture
 - Frontend: [TBD]
