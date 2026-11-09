@@ -41,12 +41,8 @@ export function DemoExperience() {
     }
   }, [timeLeft, demoPhase, activeExperience, currentSlide]);
 
-  if (demoPhase !== 'playing' || !activeExperience) return null;
-
-  const slides = activeExperience.slides;
-  const slide = slides[currentSlide] ?? slides[0];
-  if (!slide) return null;
-
+  // Hooks must run unconditionally: the demo only renders once demoPhase === 'playing'.
+  // (Returning null early before useCallback crashed the whole app with a hook-order error.)
   const handleSkip = useCallback(() => {
     completeDemo();
   }, [completeDemo]);
@@ -56,6 +52,12 @@ export function DemoExperience() {
       exitDemo();
     }
   }, [exitDemo]);
+
+  if (demoPhase !== 'playing' || !activeExperience) return null;
+
+  const slides = activeExperience.slides;
+  const slide = slides[currentSlide] ?? slides[0];
+  if (!slide) return null;
 
   return (
     <div className="demo-overlay" role="dialog" aria-modal="true" aria-label="Booth Demo Experience">
