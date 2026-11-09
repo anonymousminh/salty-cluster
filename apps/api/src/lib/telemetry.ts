@@ -32,3 +32,12 @@ export async function withSpan<T>(name: string, attributes: Attributes, fn: () =
 export function setSpanAttributes(attributes: Attributes): void {
   trace.getActiveSpan()?.setAttributes(attributes);
 }
+
+// ---- Realtime (presence + chat). Counts only: message text and player names are never recorded. ----
+export const realtimeConnects = meter.createCounter("realtime.connections", { description: "WebSocket connections by outcome (accepted, rejected)" });
+export const chatMessages = meter.createCounter("realtime.chat.messages", { description: "Chat messages by kind (say, dm)" });
+export const chatRejected = meter.createCounter("realtime.chat.rejected", { description: "Rejected chat messages by reason" });
+/** Updated by the realtime layer; exported as gauges. */
+export const realtimeGauges = { online: 0, tickMs: 0 };
+meter.createObservableGauge("realtime.players.online", { description: "Players connected to the realtime hub" }).addCallback((r) => r.observe(realtimeGauges.online));
+meter.createObservableGauge("realtime.tick.ms", { unit: "ms", description: "Duration of the last presence snapshot tick" }).addCallback((r) => r.observe(realtimeGauges.tickMs));

@@ -4,6 +4,7 @@ import { GameCanvas } from './game/GameCanvas';
 import { GameHud, resolveTarget } from './game/hud/GameHud';
 import { formatTime, mockSuggest, useMockAvailability, type SpotSuggestion } from './game/mock';
 import { useQuest } from './game/quest';
+import { useRealtime } from './game/net/useRealtime';
 import { useGame } from './game/store';
 import { Lobby } from './lobby/Lobby';
 import { EMPTY_PROFILE, loadProfile, saveProfile, toCareerProfile, type PlayerProfile } from './lobby/profile';
@@ -14,12 +15,15 @@ import { useDemoStore } from './game/demo/store';
 import { DemoProgressUI } from './game/demo/DemoProgressUI';
 import { DemoAdminPanel } from './game/demo/DemoAdminPanel';
 
+const demoParams = new URLSearchParams(window.location.search);
+/** `?name=Sam&color=22d3ee` lets several demo windows join as different players. */
+const demoColor = demoParams.get('color');
 const DEMO_PROFILE: PlayerProfile = {
-  name: 'Alex',
+  name: (demoParams.get('name') ?? '').trim().slice(0, 24) || 'Alex',
   role: 'ML Engineer',
   lookingFor: ['Full-time job', 'Cofounder'],
   skills: ['Python', 'PyTorch', 'React'],
-  color: '#f472b6',
+  color: demoColor && /^[0-9a-fA-F]{6}$/.test(demoColor) ? `#${demoColor}` : '#f472b6',
   showOnLeaderboard: true,
 };
 
@@ -125,6 +129,16 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quest.mode, phase]);
 
+  // Presence + chat: connect once playing against the live server. If the server forgets our session
+  // (restart), register again and reconnect with the new one.
+  const chatAvailable = quest.mode === 'api';
+  const questRef = useRef(quest);
+  questRef.current = quest;
+  useRealtime(chatAvailable && phase === 'playing' ? quest.sessionId : null, () => {
+    questRef.current.reset();
+    void questRef.current.join(profile).catch(() => undefined);
+  });
+
   const spot = waypoint?.kind === 'spot' ? getSpot(waypoint.id) : undefined;
   const slotTime = suggestions.find((s) => s.spotId === waypoint?.id)?.startsAt;
 
@@ -153,6 +167,7 @@ export function App() {
             events={quest.events}
             careerProfile={toCareerProfile(profile)}
             game={quest.game}
+            chatAvailable={chatAvailable}
             onCheckIn={async (id, quizAnswer, dwellMs) => {
               const outcome = await quest.checkIn(id, quizAnswer, dwellMs);
               if (outcome.ok) {

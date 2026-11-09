@@ -41,12 +41,8 @@ export function DemoExperience() {
     }
   }, [timeLeft, demoPhase, activeExperience, currentSlide]);
 
-  if (demoPhase !== 'playing' || !activeExperience) return null;
-
-  const slides = activeExperience.slides;
-  const slide = slides[currentSlide] ?? slides[0];
-  if (!slide) return null;
-
+  // Hooks must run on every render, so these sit above the early returns below
+  // (starting a demo used to throw "Rendered more hooks than during the previous render").
   const handleSkip = useCallback(() => {
     completeDemo();
   }, [completeDemo]);
@@ -56,6 +52,12 @@ export function DemoExperience() {
       exitDemo();
     }
   }, [exitDemo]);
+
+  if (demoPhase !== 'playing' || !activeExperience) return null;
+
+  const slides = activeExperience.slides;
+  const slide = slides[currentSlide] ?? slides[0];
+  if (!slide) return null;
 
   return (
     <div className="demo-overlay" role="dialog" aria-modal="true" aria-label="Booth Demo Experience">

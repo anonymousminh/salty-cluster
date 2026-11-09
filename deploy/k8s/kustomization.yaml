@@ -5,6 +5,7 @@ labels:
   - pairs: {app.kubernetes.io/part-of: salty-cluster}
 resources:
   - api.yaml
+  - realtime.yaml
   - web.yaml
   - otel-collector.yaml
   - es-setup-job.yaml

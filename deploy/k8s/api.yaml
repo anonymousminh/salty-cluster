@@ -20,6 +20,8 @@ spec:
             - { name: OTEL_SERVICE_NAME, value: api }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector:4318" }
             - { name: DEPLOYMENT_ENVIRONMENT, value: hackathon }
+            # Presence + chat are served by the single-replica `realtime` Deployment instead (realtime.yaml).
+            - { name: REALTIME_ENABLED, value: "false" }
           envFrom: [{ secretRef: { name: salty-secrets } }]
           readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, initialDelaySeconds: 10 }

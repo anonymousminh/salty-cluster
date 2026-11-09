@@ -17,6 +17,8 @@ import { KEYBOARD_MAP, Player } from './Player';
 import { useGame } from './store';
 import { Booth } from './world/Booth';
 import { Bots } from './world/Bots';
+import { RemotePlayers } from './world/RemotePlayers';
+import { useNet } from './net/store';
 import { Ground } from './world/Ground';
 import { Beacon, GuideArrow, MeetupPoint } from './world/Markers';
 import { Scenery } from './world/Scenery';
@@ -71,6 +73,10 @@ function World({ playerName, playerColor, booths, boothStats, visitedBoothIds, a
   const waypoint = useGame((s) => s.waypoint);
   const nearBoothId = useGame((s) => s.nearBoothId);
   const startDemo = useDemoStore((s) => s.startDemo);
+  // Simulated attendees are for the offline demo. Once connected to a real server the park shows real players
+  // (open the page with ?bots to keep the simulated ones too).
+  const online = useNet((s) => s.status === 'online');
+  const showBots = !online || new URLSearchParams(window.location.search).has('bots');
   const visited = new Set(visitedBoothIds);
   const statsReady = Object.keys(boothStats).length > 0;
 
@@ -104,7 +110,8 @@ function World({ playerName, playerColor, booths, boothStats, visitedBoothIds, a
       {WORLD.spots.map((s) => (
         <MeetupPoint key={s.id} spot={s} availability={availability[s.id]} targeted={waypoint?.kind === 'spot' && waypoint.id === s.id} />
       ))}
-      <Bots />
+      {showBots && <Bots />}
+      <RemotePlayers />
       {game && game.state.status !== 'lobby' && <StormWall circle={game.state.circle} />}
       {target && <Beacon at={target} color={waypoint?.kind === 'spot' ? QUEST.meetup : QUEST.waypoint} />}
       {phase === 'playing' ? (

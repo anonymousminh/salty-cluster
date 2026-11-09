@@ -19,6 +19,8 @@ export interface Quest {
   careerProfile: CareerProfile;
   /** Battle-royale circle; null offline. */
   game: GameView | null;
+  /** The joined player's session (api mode); null before joining or offline. Used to open the realtime connection. */
+  sessionId: string | null;
   join: (profile: PlayerProfile) => Promise<void>;
   checkIn: (boothId: string, quizAnswer: number, dwellMs: number) => Promise<CheckinOutcome>;
   reset: () => void;
@@ -61,6 +63,7 @@ export function useQuest({ profile }: { profile: PlayerProfile }): Quest {
   const [leaderboard, setLeaderboard] = useState<Leaderboard>({ entries: [] });
   const [events, setEvents] = useState<QuestEvent[]>([]);
   const session = useRef(loadSession());
+  const [sessionId, setSessionId] = useState<string | null>(() => session.current?.sessionId ?? null);
   const leader = useRef<string | null>(null);
   const seq = useRef(0);
 
@@ -127,6 +130,7 @@ export function useQuest({ profile }: { profile: PlayerProfile }): Quest {
       });
       session.current = s;
       saveSession(s);
+      setSessionId(s.sessionId);
       track('player_joined', { has_role: !!p.role, on_leaderboard: p.showOnLeaderboard });
       await refresh().catch(() => undefined);
     },
@@ -164,16 +168,17 @@ export function useQuest({ profile }: { profile: PlayerProfile }): Quest {
     // Start over as a new player (organizers reset the whole game from the console).
     session.current = null;
     saveSession(null);
+    setSessionId(null);
     setProgress({ xp: 0, rank: 0, visitedBoothIds: [], totalBooths: booths.length });
     setEvents([]);
   }, [mode, mock, booths.length]);
 
   if (mode === 'connecting') {
     // A second or two at most: show an empty park rather than flashing mock data.
-    return { mode, booths: [], boothStats: {}, progress, leaderboard: { entries: [] }, events: [], careerProfile: MOCK_CAREER_PROFILE, game: null, join, checkIn, reset };
+    return { mode, booths: [], boothStats: {}, progress, leaderboard: { entries: [] }, events: [], careerProfile: MOCK_CAREER_PROFILE, game: null, sessionId: null, join, checkIn, reset };
   }
   if (mode === 'offline') {
-    return { ...mock, mode, game: null, join: async () => undefined, checkIn, reset };
+    return { ...mock, mode, game: null, sessionId: null, join: async () => undefined, checkIn, reset };
   }
   return {
     mode,
@@ -184,6 +189,7 @@ export function useQuest({ profile }: { profile: PlayerProfile }): Quest {
     events,
     careerProfile: profile.name ? toCareerProfile(profile) : MOCK_CAREER_PROFILE,
     game,
+    sessionId,
     join,
     checkIn,
     reset,

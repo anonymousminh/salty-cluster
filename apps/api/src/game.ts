@@ -21,6 +21,7 @@ import {
   type NotEligibleReason,
   type OrganizerBooth,
   type OrganizerStats,
+  type PlayerRef,
   type Progress,
   type Session,
   type Vec2,
@@ -54,6 +55,7 @@ interface StoredBooth {
 }
 interface PlayerDoc {
   name: string;
+  color?: string;
   show_on_leaderboard: boolean;
 }
 interface RankBucket {
@@ -211,6 +213,15 @@ export class GameService {
     playersJoined.add(1);
     this.log.info({ event: 'player.joined' }, 'player joined');
     return { sessionId, name: req.name };
+  }
+
+  /**
+   * Public identity for realtime chat and presence. `pid` is derived separately from the
+   * Elasticsearch document id, so it can be shown to other players without linking to stored data.
+   */
+  async identify(sessionId: string): Promise<PlayerRef> {
+    const p = await this.player(sessionId);
+    return { pid: this.hash(`pid:${sessionId}`).slice(0, 16), name: p.name, color: /^#[0-9a-fA-F]{6}$/.test(p.color ?? '') ? (p.color as string) : '#94a3b8' };
   }
 
   private async player(sessionId: string): Promise<PlayerDoc> {

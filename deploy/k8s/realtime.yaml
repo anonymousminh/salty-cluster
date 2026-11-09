@@ -1,0 +1,47 @@
+# Presence + chat. Same image as the API, but ONE replica and only this one serves /api/realtime.
+#
+# Why: players, positions and chat live in this process's memory. With two replicas, players
+# connected to different pods would never see or hear each other. The web nginx routes
+# /api/realtime here (deploy/web/nginx.conf); the scaled-out `api` pods run with REALTIME_ENABLED=false.
+#
+# Trade-offs, on purpose:
+#   - strategy Recreate: a rollout briefly has no realtime pod (players reconnect on their own within
+#     seconds). RollingUpdate would run old and new pods together and split the park in two.
+#   - no HPA: one Node process handled 800 simulated players at about 10 % of a core in testing; scaling out
+#     would need presence sharded by zone, not more replicas (docs/system-design.md, "Realtime").
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realtime
+  labels: { app.kubernetes.io/name: realtime }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app.kubernetes.io/name: realtime } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: realtime }
+    spec:
+      securityContext: { runAsNonRoot: true }
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: realtime
+          image: ghcr.io/anonymousminh/salty-cluster-api
+          ports: [{ containerPort: 8080, name: http }]
+          env:
+            - { name: OTEL_SERVICE_NAME, value: realtime }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector:4318" }
+            - { name: DEPLOYMENT_ENVIRONMENT, value: hackathon }
+          envFrom: [{ secretRef: { name: salty-secrets } }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, initialDelaySeconds: 10 }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: realtime, labels: { app.kubernetes.io/name: realtime } }
+spec:
+  selector: { app.kubernetes.io/name: realtime }
+  ports: [{ port: 80, targetPort: http, name: http }]

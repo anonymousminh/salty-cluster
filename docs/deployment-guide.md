@@ -265,7 +265,7 @@ kubectl apply -n argocd -f deploy/argocd/application.yaml
 ```
 Argo CD now syncs `deploy/k8s` from `main`:
 1. **PreSync:** the `es-setup` Job creates any missing indices and upserts the 16 booths.
-2. The `api` (2 replicas + HPA), `web` (2 replicas) and `otel-collector` Deployments roll out.
+2. The `api` (2 replicas + HPA), `realtime` (1 replica: presence and chat), `web` (2 replicas) and `otel-collector` Deployments roll out.
 
 **Check:**
 ```bash

@@ -20,6 +20,8 @@ import { BoothDialog } from './BoothDialog';
 import { CompassBar, type CompassMarker } from './CompassBar';
 import { Minimap } from './Minimap';
 import { LeaderboardPanel, Toasts, XpBar } from './Panels';
+import { useNet } from '../net/store';
+import { ChatPanel } from './ChatPanel';
 import { ZoneBanner } from './ZoneBanner';
 import type { CheckinOutcome } from '../quest';
 import './hud.css';
@@ -36,10 +38,12 @@ export interface GameHudProps {
   /** Battle-royale circle (null when playing offline). */
   game?: GameView | null;
   onCheckIn: (boothId: string, quizAnswer: number, dwellMs: number) => Promise<CheckinOutcome>;
+  /** Chat needs the live game server; false in the offline demo. */
+  chatAvailable?: boolean;
 }
 
 /** Everything drawn over the 3D world while playing. */
-export function GameHud({ booths, boothStats, progress, leaderboard, events, careerProfile, game, onCheckIn }: GameHudProps) {
+export function GameHud({ booths, boothStats, progress, leaderboard, events, careerProfile, game, onCheckIn, chatAvailable = false }: GameHudProps) {
   const zone = useMemo(() => (game ? new Set(game.inZoneBoothIds) : null), [game]);
   const inStorm = (id: string) => !!zone && !zone.has(id);
   const pos = useGame((s) => s.playerPos);
@@ -54,6 +58,7 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
   const isBoothCompleted = useDemoStore((s) => s.isBoothCompleted);
   const demoStats = useDemoStore((s) => s.stats);
   const touch = useIsTouch();
+  const chatOpen = useNet((s) => s.panelOpen);
   const visited = useMemo(() => new Set(progress?.visitedBoothIds ?? []), [progress]);
 
   const target = resolveTarget(waypoint, booths);
@@ -132,8 +137,9 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
       )}
 
       <XpBar progress={progress} />
+      <ChatPanel available={chatAvailable} />
       {!touch && <ControlsHelp />}
-      {touch && !open && (
+      {touch && !open && !chatOpen && (
         <div className="hud-touch">
           <Joystick joystickWrapperStyle={{ position: 'absolute', left: 12, bottom: 70, width: 160, height: 160 }} />
           <div className="hud-touch__buttons">

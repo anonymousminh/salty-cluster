@@ -23,7 +23,7 @@ Consequences for the design:
 | Observability: OTel traces/metrics/logs → Dash0, browser RUM | **Built** (`packages/telemetry`, collector config). Dashboards/SLOs are set up in Dash0 (`docs/observability.md`). |
 | Infrastructure: Kubernetes + Argo CD (managed with Radar), CI | **Built** (`deploy/`, `.github/workflows/ci.yml`; see `docs/deployment-guide.md`). |
 | Swipe/match, Elasticsearch people ranking, Postgres for matching/booking, SSE | **Designed here, not built.** |
-| Presence (multiplayer) | **Designed here, not built.** The client shows simulated attendees. |
+| Realtime presence and chat: other players walk around, nearby text chat, private messages, mute | **Built** (`apps/api/src/presence.ts`, `realtime.ts`; client in `apps/web/src/game/net`). In-memory, single process. See §7 for what it does and does not do. |
 
 Everything below marks which parts are built (**[built]**) and which are proposals (**[proposed]**).
 
@@ -35,7 +35,7 @@ Everything below marks which parts are built (**[built]**) and which are proposa
 - Sponsor booths with walk-up check-in, XP, an underdog bonus and a live leaderboard **[built on mocks]**
 - Ranked "people to meet" deck with a "why connect" explanation, swipe, mutual match, real-time notification **[proposed]**
 - Meetup-point suggestion and booking without double-booking, plus a waypoint to the meetup **[waypoint built, booking proposed]**
-- Presence: see other attendees move around **[proposed]**
+- Presence: see other attendees move around, and talk to them with nearby text chat and private messages **[built]**
 - Block and report **[proposed]**
 
 **Targets** (proposed)
@@ -53,7 +53,7 @@ Everything below marks which parts are built (**[built]**) and which are proposa
 **Load model** (peak: a keynote ends and everyone opens the app). Design for 800 concurrent players, with headroom to 2,000. These are estimates and need a load test:
 - Swipes: about 270 writes/s at peak, about 120k rows per event. Deck queries: about 15/s.
 - Booth check-ins: bursty but small (800 players × about 8 booths over several hours).
-- Presence: 800 players × 10 Hz = **8,000 inbound updates/s**. Sending everything to everyone would be 800 × 799 × 10 ≈ 6.4 M updates/s ≈ 75 MB/s, which is impossible. So presence needs **interest management** (§8): each client only receives the nearest players.
+- Presence: 800 players × 10 Hz = **8,000 inbound updates/s**. Sending everything to everyone would be 800 × 799 × 10 ≈ 6.4 M updates/s ≈ 75 MB/s, which is impossible. So presence needs **interest management** (§7): each client only receives the nearest players.
 - Long-lived connections: 800–2,000 (one WebSocket for presence, one SSE stream for events).
 
 The hard parts are correctness (no double matches or overbooking, XP that can't be farmed), presence fan-out, and 3D performance on phones. Raw throughput is not.
@@ -156,13 +156,47 @@ Meetup points are a coordination limit, not a physical one: nothing stops many a
 
 The quiz is friction and a prompt to read the pitch, **not security**: the client can derive the answer. The real controls are proximity, dwell time verified by the server, one credit per booth, and rate limits (§9).
 
-## 7. Real-time presence (multiplayer) [proposed]
-- **Protocol:** WebSocket. The client sends `{x, z, heading, state}` at about 10 Hz. The server validates and sends back snapshots at 5 Hz.
-- **Rooms:** one in-memory room per zone-group, so players only ever receive neighbours.
-- **Interest management:** each snapshot contains the nearest 40 players within about 40 m. Estimated cost: about 12 B per player update, so about 0.5 KB per snapshot per client, about 2.5 KB/s per client, about 2 MB/s and 4,000 msgs/s for 800 clients on one task. Validate with a load test before trusting this.
-- **Client:** interpolates snapshots (about 100–200 ms buffer). The bots in `game/world/Bots.tsx` use the same renderer, so real players replace them without a rendering change.
-- **Opt-in:** a player who does not opt in is not broadcast to others.
-- **Server uses presence for check-in:** the check-in endpoint asks the presence service whether the player has been within the radius for at least 6 s.
+## 7. Real-time presence and chat [built]
+Other players appear in the park and attendees can talk to each other. Everything here is **ephemeral**: no message and no position is ever stored.
+
+**Transport and protocol** (`packages/venue/src/realtime.ts`, shared by server and client). One WebSocket at `/api/realtime` with JSON text frames:
+
+| Direction | Frames |
+|---|---|
+| client → server | `hello {session}` (must be first), `pos {x, z, h, m}` at 10 Hz when it changes, `say {text}`, `dm {to, text}` |
+| server → client | `welcome {you, roster}`, `join`, `leave`, `snap` at 5 Hz, `say`, `dm`, `err {code}` |
+
+- The session id travels in the first frame, never in a URL, so it stays out of proxy and access logs. An unknown session is closed with code 4004, a late `hello` with 4001, and a second tab replaces the first (4002).
+- Players are identified on the wire by a public `pid` (derived separately from the Elasticsearch id, so it links to no stored data) and, in snapshots, by a small connection-scoped number.
+
+**Rules**
+- **Interest management:** each player receives the nearest 40 others within 45 m. Positions go out to 0.1 m.
+- **Nearby chat** reaches players within 15 m of the speaker (and the speaker). **Private messages** go to one online player anywhere. Neither is stored or replayed: you only see what is said while you are connected.
+- **Abuse limits:** a burst of 5 messages then one every 2 s (shared by chat and DMs), 200 characters, control and bidi-override characters stripped, frames over 1 KB close the socket, positions clamped to the park, position updates over 25 Hz dropped, unauthenticated sockets closed after 5 s, 5,000 open sockets per process.
+- **Mute** is per player, kept in the browser, and applies to nearby chat, DMs and bubbles.
+- Message text is rendered as plain text (React escapes it). Telemetry records counts only, never text or names.
+
+**Client** (`apps/web/src/game/net`, `hud/ChatPanel.tsx`, `world/RemotePlayers.tsx`): reconnects with jittered backoff (0.5 s up to 10 s), eases remote avatars between snapshots, shows speech bubbles above heads, and has a chat panel (Nearby, Private, People). **Typing locks movement**: while a chat box has focus the game ignores W, A, S, D and Space. Enter opens chat and focuses the box. If the server forgets the session (restart), the client registers again and reconnects by itself.
+
+**Measured** (`pnpm --filter @meetspace/api loadtest:realtime`, 800 simulated players random-walking at 10 Hz, server and load generator on one laptop, in-memory Elasticsearch stand-in):
+
+| | Result |
+|---|---|
+| Snapshots per player | 4.95 per second (target 5) |
+| Snapshot size | about 880 B with 40 players (about 22 B per player) |
+| Bandwidth | about 4.2 KB/s per player down, about 3.4 MB/s total |
+| Chat latency | p50 37 ms, p95 62 ms, max 62 ms (80 probes) |
+| Errors / dropped sockets | 0 / 0 of 800 |
+| Server | about 7 % of one CPU core, about 280 MB RSS for the whole dev server |
+
+An earlier version sent string ids and two-decimal positions: about 1.6 KB per snapshot and 7.6 KB/s per player, 1.8× the above. The first design estimate (2.5 KB/s) was too low; the table is the measurement. Run the script from a separate machine, against real Elasticsearch and a real network, before trusting the latency numbers.
+
+**Not done, on purpose or not yet**
+- **One process.** Players live in one process's memory, so every player must connect to the same one. In Kubernetes that is the single-replica `realtime` Deployment (`deploy/k8s/realtime.yaml`); nginx routes `/api/realtime` to it and the scaled-out `api` pods run with `REALTIME_ENABLED=false`. Restarting it drops everyone for a few seconds, and they reconnect automatically. Beyond a few thousand players, shard by zone.
+- **DMs are not limited to matched players.** Any two online players can message each other, because matching is not built yet. Restricting DMs to matches is a one-line check in `PresenceHub.onDm`.
+- **No moderation beyond rate limits and mute.** There is no profanity filter, report button or organiser mute. Players' display names are shown in chat even if they hid their name on the leaderboard.
+- **Positions are trusted** apart from clamping to the park. The check-in endpoint still trusts the client's `dwellMs`; verifying dwell from presence is the next step.
+- **No voice.**
 
 ## 8. API surface [proposed; zod schemas in `packages/shared`, OpenAPI generated]
 ```
@@ -174,14 +208,14 @@ POST /meetings → 201 | 409 { alternatives }            POST /meetings/:id/conf
 GET  /booths              GET /booths/stats            GET /me/progress     GET /leaderboard?limit=10
 POST /booths/:id/checkin  { dwellMs, quizAnswer } → { xpGained, base, bonus } | 409 already_visited | 422 not_eligible
 POST /blocks   POST /reports   GET /healthz /readyz
-WS   /presence            SSE events: match.created, booth.visited, leaderboard.changed
+WS   /api/realtime        [built] presence + chat (§7)        SSE events: match.created, booth.visited, leaderboard.changed
 ```
 
 ## 9. Security, privacy, abuse
 - **Auth:** event code plus email OTP issues a short-lived JWT. The hackathon demo keeps a no-auth feature flag.
 - **Check-in integrity:** the server verifies dwell from presence, enforces one credit per booth, and rate-limits check-ins. **Movement sanity:** reject position jumps above a maximum speed (running is about 7 m/s), which blocks teleport hacks.
 - **Privacy:** left swipes and pre-match likes are never revealed. Blocks apply in both directions. The leaderboard shows the display name the player chose, or "Anonymous". Presence is opt-in.
-- **Rate limits:** swipes 60/min, OTP 5/h, check-ins 10/min.
+- **Rate limits:** swipes 60/min, OTP 5/h, check-ins 10/min. Chat is limited to a burst of 5 messages then one every 2 s [built, §7].
 - **Retention:** minimal personal data, deleted 30 days after the event.
 - **Telemetry hygiene:** user IDs are HMAC-hashed in spans and logs. Names, bios and emails never go into attributes, and the OTel Collector redacts as a backstop.
 - **Code quality:** SonarCloud gate blocks merges on new bugs or vulnerabilities, or coverage below 70 % for `apps/api`.
@@ -219,7 +253,8 @@ apps/web          React + Vite game client
   public/characters/  README + optional player.glb
 packages/venue    @meetspace/venue: world data, booth slots, scoring, check-in rules, quiz, quest types, validation, tests
 apps/api          [proposed] Fastify routes; services: rank, match, booking, checkin, stream (SSE)
-apps/presence     [proposed] WebSocket presence service
+apps/api (realtime) [built] src/presence.ts (hub), src/realtime.ts (WebSocket), scripts/loadtest-realtime.ts
+apps/web (net)    [built] src/game/net (client, store), hud/ChatPanel.tsx, world/RemotePlayers.tsx, world/ChatBubble.tsx
 apps/indexer      [proposed] outbox → Elasticsearch worker
 packages/shared   [proposed] zod schemas and API types
 infra/            [proposed] Terraform (VPC, ECS, ALB, RDS, CloudFront, Elastic Cloud, Dash0 rules), otel-collector.yaml
@@ -230,33 +265,35 @@ The shared package is still named `@meetspace/venue` even though it now holds th
 ## 12. Delivery phases
 
 **Phase 0: hackathon demo**
-- Built: lobby, Expo Park, third-person 3D character, booth check-in with underdog bonus and leaderboard, matched-meetup waypoint, HUD, bots, world validation and tests (all on mocks).
+- Built: lobby, Expo Park, third-person 3D character, booth check-in with underdog bonus and leaderboard, matched-meetup waypoint, HUD, world validation and tests, and **realtime presence and chat** (other players, nearby chat, private messages, mute). Simulated bots remain for the offline demo.
 - Next, with teammates: swipe/match flow, ranking with named queries, the atomic match transaction, real join and check-in endpoints, a SonarCloud scan.
-- Skip for the demo: auth, outbox (write to Elasticsearch directly), real presence.
+- Skip for the demo: auth, outbox (write to Elasticsearch directly).
 
 **Phase 1: event-ready**
 - ECS Fargate + RDS + CloudFront + Elastic Cloud via Terraform
 - OTP auth, outbox indexer, SSE with `LISTEN/NOTIFY`, slot booking
-- Presence service with interest management, check-in verification from presence
+- Check-in verification from presence (the hub already knows where every player is), DMs restricted to matches, moderation (report, organiser mute, profanity filter)
 - Popularity dampening, Postgres fallback, block/report, rate limits
 - Dash0 SLOs, alerts and synthetic checks; on-call runbook (Elasticsearch kill switch, freeze bookings, broadcast banner, ECS rollback)
-- k6 test at 2,000 virtual users, plus a presence load test
+- k6 test at 2,000 virtual users; re-run the presence load test against real Elasticsearch from a separate machine
 
-**Phase 2:** embeddings and hybrid ranking, proximity chat or voice at meetups, organiser dashboard (visit funnel, bounty effect), keynote events, post-event follow-ups.
+**Phase 2:** embeddings and hybrid ranking, proximity voice at meetups, presence sharded by zone beyond a few thousand players, organiser dashboard (visit funnel, bounty effect), keynote events, post-event follow-ups.
 
 ## 13. Verification
 - **Unit [built]:** world validation, check-in proximity, quiz determinism, underdog scoring (monotonic, no divide-by-zero), career-fit matching.
 - **Unit [proposed]:** query builder → explanation mapping, spot-suggestion scoring.
 - **Concurrency [proposed] (testcontainers Postgres):** 1,000 parallel reciprocal swipes produce exactly one match per pair and two inbox rows; 200 parallel bookings on a capacity-3 slot give 3 successes and 197 `409`s; 100 parallel check-ins by one player on one booth give exactly one XP credit.
 - **E2E [proposed] (Playwright):** join → walk to a booth → check in → XP and leaderboard update; swipe the seeded reciprocal user → the match arrives in the other browser → the waypoint appears.
-- **Presence [proposed]:** 800 simulated clients at 10 Hz; verify snapshot rate, CPU, and the interest-management cap.
+- **Presence and chat [built]:** 24 hub unit tests (join/replace/leave, chat radius, rate limit, DMs, position clamping, interest cap, snapshot size, 800 players in one tick) and 10 real-WebSocket tests (hello/auth, nearby and private delivery, unknown session, bad frames, reconnect replace). Two real browsers were driven end to end: nearby chat with bubbles, a private message with an unread badge, mute and unmute, typing locking movement, and recovery after an API restart. The 800-player load test is in §7. **Not tested:** real Elasticsearch, a separate load-generator machine, a real phone, and the nginx WebSocket route (the config was reviewed, not run).
 - **Load [proposed] (k6, 2,000 virtual users, spike profile):** check §1 targets.
-- **Chaos [proposed]:** stop an API task mid-test (no lost matches); block Elasticsearch (decks keep serving); kill the presence task (clients rejoin); a failing `/readyz` deploy rolls back within about 5 minutes.
+- **Chaos [proposed]:** stop an API task mid-test (no lost matches); block Elasticsearch (decks keep serving); kill the realtime pod (clients reconnect on their own, tested locally with a restart); a failing `/readyz` deploy rolls back within about 5 minutes.
 - **Client performance [to do]:** frame rate and load time on a mid-range phone, with and without the optional character file.
 - **Demo:** the two-minute script in the MVP doc runs end to end.
 
 ## 14. Open decisions
-- **What happens when two matched players meet?** Options are text chat, proximity voice, or a link to an external video call. The demo only shows the waypoint and arrival.
+- **What happens when two matched players meet?** Text chat and private messages now exist. Still open: proximity voice, or a link to an external video call.
+- **Who can send private messages?** Currently any online player. Decide whether that should be limited to matched players, and whether players can opt out of DMs.
+- **Moderation:** the chat has rate limits and per-player mute only. Decide whether the event needs a profanity filter, a report button or organiser mute, and whether chat names should respect the "hide my name" leaderboard setting.
 - **Virtual only, or hybrid?** If there is also a physical event, booth staff can still scan badges and the same XP rules apply.
 - **Character asset:** confirm the KayKit licence terms on the download page before shipping, and decide whether players can pick between several characters.
 - **Reconciled with the repo README (saigirish branch):** the booth quest keeps walk-up check-in and adds the organizer's shrinking circle (Elasticsearch `geo_distance`), QR check-in for physical booths, and runs on Kubernetes with Argo CD and Radar instead of ECS Fargate. The §-level hosting and Postgres choices above still apply to the not-yet-built matching features.

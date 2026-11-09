@@ -4,7 +4,8 @@
 | Workload | Kind | Notes |
 |---|---|---|
 | `api` | Deployment (2) + HPA (2–6) + Service | Probes: `/healthz` (process up), `/readyz` (Elasticsearch reachable) |
-| `web` | Deployment (2) + Service | nginx serves the 3D game at `/` and the console at `/console/`, and proxies `/api` to the `api` Service ([`deploy/web`](../deploy/web)) |
+| `realtime` | Deployment (**1**, `Recreate`) + Service | Same image as `api`; nginx sends it only the presence + chat WebSocket (`/api/realtime`). Players live in this process's memory, so it must be a single replica; the `api` pods run with `REALTIME_ENABLED=false`. A rollout drops everyone for a few seconds and clients reconnect by themselves |
+| `web` | Deployment (2) + Service | nginx serves the 3D game at `/` and the console at `/console/`, and proxies `/api` to the `api` Service and `/api/realtime` (WebSocket) to the `realtime` Service ([`deploy/web`](../deploy/web)) |
 | `otel-collector` | Deployment + Service + Role | Namespace-scoped RBAC, so it works in a team namespace |
 | `es-setup` | Job (Argo CD PreSync hook) | Creates indices, upserts booths. Idempotent |
 

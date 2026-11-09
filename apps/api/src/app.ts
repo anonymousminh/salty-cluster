@@ -3,6 +3,7 @@ import type { Config } from './config';
 import type { Es } from './es/client';
 import { GameService } from './game';
 import { registerRoutes } from './routes';
+import { attachRealtime } from './realtime';
 import { HttpError } from './lib/errors';
 
 export function buildApp(opts: { es: Es; config: Config; logger?: boolean | object }): FastifyInstance {
@@ -27,5 +28,7 @@ export function buildApp(opts: { es: Es; config: Config; logger?: boolean | obje
 
   const game = new GameService(opts.es, opts.config.playerSalt, app.log);
   registerRoutes(app, game, opts.es, opts.config.organizerToken);
+  // Presence + chat over WebSocket. In-memory: see docs, "Realtime deployment".
+  if (opts.config.realtime) attachRealtime(app, game);
   return app;
 }

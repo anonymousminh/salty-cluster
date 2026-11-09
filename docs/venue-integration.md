@@ -5,6 +5,7 @@ MeetSpace is a **virtual conference you play**. Attendees work through four step
 2. **Drop into Expo Park**, our own conference world.
 3. **Walk a 3D character** to sponsor booths to earn XP. Quiet booths pay an underdog bonus.
 4. **Follow waypoints** to meetup points after a match.
+5. **Talk to other players**: nearby text chat, private messages, and mute (needs the live game server).
 
 Run it with `pnpm install && pnpm dev` and open http://localhost:5173.
 
@@ -15,6 +16,7 @@ Run it with `pnpm install && pnpm dev` and open http://localhost:5173.
 | Jump | `Space` | Jump button |
 | Talk to a booth | `E` (when the prompt shows) | Talk button / tap the prompt |
 | Camera | drag to orbit, wheel to zoom | drag / pinch |
+| Open chat | `Enter` (then type; `Enter` sends, `Esc` closes) | 💬 Chat button |
 
 | URL | What it does |
 |---|---|
@@ -24,6 +26,9 @@ Run it with `pnpm install && pnpm dev` and open http://localhost:5173.
 | `?demo=booth` | Skip the lobby, stand at the nearest bounty booth with its dialog open |
 | `?demo=match` | Skip the lobby, get a match with a meetup waypoint (beam, guide arrows, compass) |
 | `?touch` | Force the on-screen joystick and buttons |
+| `?name=Sam&color=22d3ee` | With `?enter=1`: join under another name/color, so several windows can be different players |
+| `?bots` | Keep the simulated attendees even when connected to the live server (they are hidden then, so you only see real players) |
+| `?offline` | Never contact the API: mock quest data, no chat |
 
 The **☰ Demo** drawer (top left) has buttons to simulate a match, set a bounty waypoint, teleport to the waypoint, reset the quest, and go back to the lobby.
 
@@ -103,7 +108,28 @@ Next: SSE booth.visited / leaderboard.changed (the game polls every 3 s for now)
 - One credit per booth per attendee.
 - Battle royale: booths outside the organizer's circle ("the storm") pay 0 XP and are not used up.
 
-**Privacy:** the leaderboard shows the attendee's display name, or "Anonymous" if they opted out. Bots stand in for other players. A real presence feed should be opt-in.
+**Privacy:** the leaderboard shows the attendee's display name, or "Anonymous" if they opted out. In the offline demo, bots stand in for other players.
+
+## Chat and presence (`/api/realtime`)
+
+To try it with two players: run `pnpm dev:memory` (API without Docker) and `pnpm dev`, then open `http://localhost:5173/?enter=1&name=Sam` and `http://localhost:5173/?enter=1&name=Priya` in two windows (or two browsers). Walk close together, press Enter and type. Open the **People** tab to send a private message.
+
+```ts
+WS /api/realtime   JSON text frames. The first frame must be hello; the session id never goes in the URL.
+  client → server   { t:'hello', session }   { t:'pos', x, z, h, m }   { t:'say', text }   { t:'dm', to: pid, text }
+  server → client   { t:'welcome', you, roster }   { t:'join', p }   { t:'leave', pid }
+                    { t:'snap', p: [[n, x, z, h, m], …] }           nearest 40 within 45 m, 5 per second
+                    { t:'say', id, from, name, text, at }            reaches players within 15 m (and the speaker)
+                    { t:'dm', id, from, to, name, text, at }         to one player and an echo to the sender
+                    { t:'err', code, message }                        rate_limited | empty | too_long | unknown_player | …
+```
+Types and constants are in `packages/venue/src/realtime.ts` (`CHAT_RADIUS`, `INTEREST_RADIUS`, `INTEREST_MAX`, `MAX_CHAT_LENGTH`, `cleanChatText`).
+
+- **Server:** `apps/api/src/presence.ts` is the hub (no sockets in it, so it is unit-tested with fake connections); `apps/api/src/realtime.ts` is the WebSocket layer. Message text is never logged or stored.
+- **Client:** `apps/web/src/game/net` (connection, store, remote positions), `world/RemotePlayers.tsx` (avatars), `world/ChatBubble.tsx`, `hud/ChatPanel.tsx`. While a chat box has focus the game ignores movement keys.
+- **One process only.** Presence is in memory, so all players must reach the same server process. In Kubernetes that is the single-replica `realtime` Deployment (`deploy/k8s/realtime.yaml`), reached through the `/api/realtime` route in `deploy/web/nginx.conf`. The scaled-out `api` pods run with `REALTIME_ENABLED=false`.
+- **Load test:** `N=800 SECONDS=20 pnpm --filter @meetspace/api loadtest:realtime` (server must be running). Results are in `docs/system-design.md` §7.
+- **Not done:** DMs are open to any online player (not just matches), there is no moderation beyond rate limits and mute, and no voice.
 
 ## Editing the world
 - Change `world.ts` (zones, paths, obstacles, spots) or `booths.ts` (slots), then run `pnpm --filter @meetspace/venue test`.

@@ -25,6 +25,7 @@ At conferences, attendees may be surrounded by hundreds of potential collaborato
 MeetSpace turns the conference into a walkable game world.
 - **Walk and explore.** A 3D character, third-person camera, and a compass, minimap and waypoints.
 - **Underdog bonus.** Booths with fewer visits than average are worth more XP and shown with a gold beam, which points attention to the quiet sponsors.
+- **Real people, real conversations.** Other attendees walk around the park, and you can talk to the ones near you in text chat, or message anyone privately.
 - **Real engagement.** XP needs a walk-up check-in: be near the booth, chat for a few seconds, and answer one question about the company.
 - **Career fit.** Booth cards show hiring roles and highlight the ones that match your profile.
 - **Complementary matching.** People are ranked by complementary goals (a founder seeking an AI engineer), not only identical interests.
@@ -33,11 +34,12 @@ MeetSpace turns the conference into a walkable game world.
 
 1. **Lobby:** enter name, role, what you are looking for, skills, and pick an avatar color with a live 3D preview. Choose whether your name appears on the leaderboard.
 2. **Drop in:** the camera lowers you into Spawn Plaza.
-3. **Explore:** walk with WASD (or a joystick on phones), run, and jump. The minimap shows all booths, and bounties glow gold.
-4. **Visit a booth:** walk up, press E (or tap Talk), read the pitch, chat for 6 seconds, answer one question, collect XP.
-5. **Discover people:** view ranked profile cards with a short explanation of why each person is relevant. Pass or connect.
-6. **Match:** a mutual connection creates a match.
-7. **Meet:** a meetup point is suggested. A beam, ground arrows and the compass lead you there, and you get a message when you arrive.
+3. **Explore:** walk with WASD (or a joystick on phones), run, and jump. The minimap shows all booths, and bounties glow gold. Other attendees walk around too.
+4. **Talk to people:** press Enter and type: players within about 15 m see your message in a speech bubble above your head. Click a name, or open the People tab, to send a private message.
+5. **Visit a booth:** walk up, press E (or tap Talk), read the pitch, chat for 6 seconds, answer one question, collect XP.
+6. **Discover people:** view ranked profile cards with a short explanation of why each person is relevant. Pass or connect.
+7. **Match:** a mutual connection creates a match.
+8. **Meet:** a meetup point is suggested. A beam, ground arrows and the compass lead you there, and you get a message when you arrive.
 
 ```mermaid
 flowchart TD
@@ -47,6 +49,8 @@ flowchart TD
     D -->|Yes| E[Talk: chat 6s + one question]
     E --> F[XP + underdog bonus + leaderboard]
     F --> C
+    C --> T[Chat: nearby or private message]
+    T --> C
     C --> G[Discover people]
     G --> H{Both connect?}
     H -->|Not yet| G
@@ -66,30 +70,37 @@ flowchart TD
 ### 2. Expo Park (the game)
 - Our own world with five zones: Spawn Plaza, Expo Street (10 booths), Careers Corner (6 booths), Networking Garden (meetup tables) and Keynote Stage
 - Third-person 3D character you move, with collisions
-- Simulated attendees walking around with name tags (placeholders for real multiplayer)
+- Other players, seen as avatars with name tags and speech bubbles (simulated attendees stand in when you are offline)
 - HUD: compass, minimap, XP/level bar, leaderboard, controls hint
 
-### 3. Booth dialog
+### 3. Chat panel
+- Press Enter (or tap 💬 Chat) to open it. Three tabs: **Nearby** (everyone within about 15 m), **Private** (one-to-one conversations with an unread badge) and **People** (everyone online, with Message and Mute)
+- Messages are up to 200 characters, rate-limited (5 in a burst, then one every 2 seconds), shown as plain text, and never stored on the server
+- Typing in the chat box does not move your character
+- Mute a player to hide their messages and bubbles
+- Chat needs the live game server; offline, the button is shown disabled
+
+### 4. Booth dialog
 - Company, tagline, hiring roles, and a "career fit" chip when roles overlap your profile
 - Check-in reward (base XP plus underdog bonus)
 - A 6-second chat timer, then a one-tap question; a wrong answer locks it for 5 seconds
 - Checked-in booths turn grey and show "Visited"
 
-### 4. Discover people
+### 5. Discover people
 - Name and role, interests and goals
 - **Why connect?** explanation
 - Illustrative compatibility score from a simple, transparent heuristic
 - **Pass** and **Connect** actions
 - **Example:** Sarah is a healthcare startup founder seeking a technical cofounder. Alex is an AI engineer, so the app recommends Sarah and explains the fit.
 
-### 5. Matches and meetup
+### 6. Matches and meetup
 - Mutual matches list with the match explanation
 - Suggested meetup points (up to three) with a time
 - Selecting one sets the waypoint: a beam, guide arrows, and the compass and objective banner
 - A confirmation card with the person, place and time
 - Preload a reciprocal swipe in the demo so the match works without a second live user
 
-**Note:** meetup points and times are predefined demo options. Real-time presence of other attendees is not part of the MVP.
+**Note:** meetup points and times are predefined demo options. Presence and chat are real (WebSocket), but private messages are open to any online player until matching is built, and there is no voice.
 
 ## Data model
 
@@ -152,7 +163,8 @@ flowchart TB
     C --> D
     D --> E[Elasticsearch]
     D --> F[In-memory or JSON state for swipes, check-ins, meetings]
-    C -. later .-> P[Presence service: WebSocket]
+    C --> P[Realtime hub: presence + chat over WebSocket]
+    P --- D
     G[SonarSource] -. Code analysis .-> A
     G -. Code analysis .-> D
 ```
@@ -167,6 +179,7 @@ flowchart TB
 | zustand | Game state (phase, position, waypoint, proximity) |
 | Procedural character, optional CC0 KayKit glTF | 3D character with walk, run, jump and cheer animations |
 | Node.js | Recommendations, swipe logic, check-in and meeting endpoints |
+| WebSocket (`ws`) | Realtime presence and chat: other players, nearby chat, private messages |
 | Elasticsearch | Index attendee profiles and rank relevant candidates |
 | SonarSource | Analyze code quality and security |
 | In-memory / JSON store | Minimal persistence for the hackathon |
@@ -200,6 +213,7 @@ For a one-day build, use straightforward text matching before considering embedd
 | Lobby | Sign-up, character preview, quest rules, join feed | Done (data kept locally) |
 | Booth Quest | Walk-up check-in, underdog bonus, leaderboard, bounties, career fit | Done on mock data |
 | Meetup | Waypoint beam, ground arrows, compass, arrival message | Done (suggestions are mocked) |
+| Players and chat | Other players walking around, nearby text chat with bubbles, private messages, mute | Done (tested with 800 simulated players and two real browsers) |
 | Discover and swipe | Profile cards, "why connect", swipe, mutual match | **To do** |
 | Elasticsearch | Index and rank seeded profiles with explanations | **To do** |
 | Backend | Join, check-in, leaderboard and meeting endpoints | **To do** |
@@ -207,11 +221,11 @@ For a one-day build, use straightforward text matching before considering embedd
 
 ### Scope guardrails
 
-**Must have:** lobby, walkable world with a 3D character, booth check-in with XP and the underdog bonus, leaderboard, discover and swipe, seeded mutual match, meetup waypoint.
+**Must have:** lobby, walkable world with a 3D character, other players visible, nearby text chat, booth check-in with XP and the underdog bonus, leaderboard, discover and swipe, seeded mutual match, meetup waypoint.
 
 **Nice to have:** a rigged glTF character, real backend endpoints in place of mocks, SonarSource results in the presentation, polished HUD animation.
 
-**Out of scope:** production authentication, real multiplayer, voice or video chat, chat, a fully accurate world model, elaborate ML training.
+**Out of scope:** production authentication, voice or video chat, chat moderation tools (profanity filter, reports), a fully accurate world model, elaborate ML training.
 
 ## Two-minute demo script
 
@@ -241,8 +255,9 @@ A bright, toy-like park with a tactical HUD: compass, minimap, waypoints, bounti
 
 ## Future extensions
 
-- Real multiplayer presence (opt-in), with players seen around you
-- Proximity text chat or voice when matched people meet
+- Proximity voice when matched people meet
+- Limit private messages to matched players, with report and organizer mute tools
+- Presence sharded by zone for several thousand players
 - Server-verified check-ins from presence, and anti-cheat checks
 - Timed events and bounties set by organizers, a keynote with live attendance
 - Organizer dashboard: visit funnel per booth, and how the underdog bonus shifts traffic

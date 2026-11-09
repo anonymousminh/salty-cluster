@@ -11,17 +11,20 @@
     "seed": "tsx scripts/seed.ts",
     "smoke": "tsx scripts/smoke.ts",
     "simulate": "tsx scripts/simulate.ts",
-    "dev:memory": "tsx watch src/dev/memory-server.ts"
+    "dev:memory": "tsx watch src/dev/memory-server.ts",
+    "loadtest:realtime": "tsx scripts/loadtest-realtime.ts"
   },
   "dependencies": {
     "@elastic/elasticsearch": "8.19.2",
     "@meetspace/telemetry": "workspace:*",
     "@meetspace/venue": "workspace:*",
     "@opentelemetry/api": "1.10.0",
-    "fastify": "5.12.8"
+    "fastify": "5.12.8",
+    "ws": "8.22.0"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
+    "@types/ws": "8.18.2",
     "tsx": "4.19.2",
     "typescript": "5.6.3",
     "vitest": "2.1.8"

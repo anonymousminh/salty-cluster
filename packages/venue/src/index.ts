@@ -12,6 +12,7 @@ export * from './validate';
 export * from './battle';
 export * from './api';
 export * from './sponsors';
+export * from './realtime';
 
 /** Every bookable meetup point. Seed `spots`/`slots` tables from this list. */
 export const ALL_SPOTS: Spot[] = SPOTS;

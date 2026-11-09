@@ -5,10 +5,13 @@ import { useKeyboardControls } from '@react-three/drei';
 import { Ecctrl, type EcctrlHandle } from 'ecctrl';
 import { EcctrlCameraControls, type EcctrlCameraControlsHandle } from 'ecctrl/camera';
 import { useButtonStore, useJoystickStore } from 'ecctrl/input';
-import { ARRIVE_RADIUS, CHECKIN_RADIUS, WORLD, getSpot, nearestBooth, type Booth, type Vec2 } from '@meetspace/venue';
+import { ARRIVE_RADIUS, CHECKIN_RADIUS, WORLD, getSpot, motionFor, nearestBooth, type Booth, type Vec2 } from '@meetspace/venue';
 import { Character } from './character/Character';
 import type { MotionState } from './character/Chibi';
 import { NameTag } from './world/NameTag';
+import { ChatBubble } from './world/ChatBubble';
+import { self } from './net/remotes';
+import { useNet } from './net/store';
 import { isInputLocked, useGame } from './store';
 import { useDemoStore } from './demo/store';
 import { getDemoExperience, getDemoExperienceForBooth } from '../data/demoBooths';
@@ -20,7 +23,8 @@ export const KEYBOARD_MAP = [
   { name: 'rightward', keys: ['ArrowRight', 'KeyD'] },
   { name: 'jump', keys: ['Space'] },
   { name: 'run', keys: ['Shift'] },
-  { name: 'talk', keys: ['KeyE', 'Enter'] },
+  // Enter is reserved for opening the chat box.
+  { name: 'talk', keys: ['KeyE'] },
 ];
 type Controls = 'forward' | 'backward' | 'leftward' | 'rightward' | 'jump' | 'run' | 'talk';
 
@@ -49,13 +53,19 @@ export function Player({ color, name, booths, onTalk, onStartDemo }: PlayerProps
   const talkLatch = useRef(false);
   const lastPublish = useRef(0);
   const spawnY = useRef(14); // drop in from the sky on entering
+  // Everyone arrives at the plaza: scatter the landing spots so hundreds of players don't stack on one point.
+  // Spread sideways, and only towards the fountain (north) so the camera behind the player stays clear of the entrance arch.
+  const spawn = useRef<[number, number]>([WORLD.spawn.at[0] + (Math.random() - 0.5) * 12, WORLD.spawn.at[1] - Math.random() * 3.5]);
+  const myPid = useNet((s) => s.me?.pid);
+  const fwd = useRef(new THREE.Vector3());
 
   useFrame((state, delta) => {
     const c = ecctrl.current;
     if (!c?.body) return; // rigid body not created yet
     const game = useGame.getState();
     const demoState = useDemoStore.getState();
-    const locked = isInputLocked(game) || demoState.demoPhase === 'playing' || demoState.demoPhase === 'quiz';
+    // Typing in the chat box must not walk the character.
+    const locked = isInputLocked(game) || useNet.getState().chatFocused || demoState.demoPhase === 'playing' || demoState.demoPhase === 'quiz';
     if (game.teleportTo && c.body) {
       c.body.setTranslation({ x: game.teleportTo[0], y: 1.5, z: game.teleportTo[1] }, true);
       c.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -84,6 +94,14 @@ export function Player({ color, name, booths, onTalk, onStartDemo }: PlayerProps
     const speed = Math.hypot(c.currLinVel.x, c.currLinVel.z);
     motion.current.gait = speed < 0.3 ? 0 : speed / 3;
     motion.current.airborne = !c.isOnGround;
+
+    // --- share where we are and what we're doing with the realtime layer (sent at 10 Hz) ---
+    fwd.current.set(0, 0, 1).applyQuaternion(c.currQuat);
+    if (Math.hypot(fwd.current.x, fwd.current.z) > 0.1) self.h = (Math.atan2(fwd.current.z, fwd.current.x) * 180) / Math.PI;
+    self.x = c.currPos.x;
+    self.z = c.currPos.z;
+    self.m = motionFor(motion.current.gait, motion.current.airborne);
+    self.ready = game.phase === 'playing';
 
     // --- publish position + proximity (10 Hz) ---
     const t = state.clock.elapsedTime;
@@ -131,7 +149,7 @@ export function Player({ color, name, booths, onTalk, onStartDemo }: PlayerProps
     <>
       <Ecctrl
         ref={ecctrl}
-        position={[WORLD.spawn.at[0], spawnY.current, WORLD.spawn.at[1]]}
+        position={[spawn.current[0], spawnY.current, spawn.current[1]]}
         capsuleHalfHeight={CAPSULE_HALF}
         capsuleRadius={CAPSULE_R}
         floatHeight={FLOAT}
@@ -143,6 +161,7 @@ export function Player({ color, name, booths, onTalk, onStartDemo }: PlayerProps
         <group position={[0, -FEET_OFFSET, 0]}>
           <Character color={color} motion={motion} backpack />
           <NameTag text={name || 'You'} y={2.1} bg={color} />
+          <ChatBubble pid={myPid} y={2.4} />
         </group>
       </Ecctrl>
       <FollowCamera ecctrl={ecctrl} />

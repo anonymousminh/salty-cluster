@@ -89,3 +89,72 @@ export function labelTexture(text: string, bg = 'rgba(15,23,42,0.85)', fg = '#ff
   labelCache.set(key, out);
   return out;
 }
+
+const bubbleCache = new Map<string, { tex: THREE.CanvasTexture; aspect: number }>();
+
+/**
+ * Speech bubble with the text wrapped to a few lines (white card, dark text, small tail).
+ * Long messages are cut with an ellipsis; the full text is always in the chat panel.
+ */
+export function bubbleTexture(text: string, maxLines = 4, maxCharsPerLine = 24): { tex: THREE.CanvasTexture; aspect: number } {
+  const key = `${text}|${maxLines}|${maxCharsPerLine}`;
+  const hit = bubbleCache.get(key);
+  if (hit) return hit;
+  if (bubbleCache.size > 200) bubbleCache.clear(); // chat is unbounded; keep memory flat
+
+  // Greedy word wrap, breaking over-long words.
+  const lines: string[] = [];
+  let line = '';
+  for (let word of text.split(' ')) {
+    while ([...word].length > maxCharsPerLine) {
+      if (line) lines.push(line), (line = '');
+      lines.push([...word].slice(0, maxCharsPerLine).join(''));
+      word = [...word].slice(maxCharsPerLine).join('');
+    }
+    if (!line) line = word;
+    else if ([...line].length + 1 + [...word].length <= maxCharsPerLine) line += ` ${word}`;
+    else lines.push(line), (line = word);
+  }
+  if (line) lines.push(line);
+  let shown = lines.slice(0, maxLines);
+  if (lines.length > maxLines) shown[maxLines - 1] = `${[...shown[maxLines - 1]!].slice(0, maxCharsPerLine - 1).join('')}…`;
+  if (shown.length === 0) shown = [''];
+
+  const font = 40;
+  const pad = 22;
+  const tail = 18;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+  ctx.font = `600 ${font}px system-ui, -apple-system, sans-serif`;
+  const textW = Math.max(...shown.map((l) => ctx.measureText(l).width));
+  const w = Math.ceil(textW + pad * 2);
+  const bodyH = Math.ceil(shown.length * font * 1.25 + pad * 1.4);
+  canvas.width = w;
+  canvas.height = bodyH + tail;
+  ctx.font = `600 ${font}px system-ui, -apple-system, sans-serif`;
+  const r = 20;
+  ctx.fillStyle = 'rgba(255,255,255,0.97)';
+  ctx.strokeStyle = 'rgba(15,23,42,0.35)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(r, 1);
+  ctx.arcTo(w - 1, 1, w - 1, bodyH, r);
+  ctx.arcTo(w - 1, bodyH, w / 2 + 12, bodyH, r);
+  ctx.lineTo(w / 2 + 12, bodyH);
+  ctx.lineTo(w / 2, bodyH + tail);
+  ctx.lineTo(w / 2 - 12, bodyH);
+  ctx.arcTo(1, bodyH, 1, 1, r);
+  ctx.arcTo(1, 1, w - 1, 1, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#0f172a';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  shown.forEach((l, i) => ctx.fillText(l, w / 2, pad * 0.7 + font * 0.62 + i * font * 1.25));
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const out = { tex, aspect: w / canvas.height };
+  bubbleCache.set(key, out);
+  return out;
+}
