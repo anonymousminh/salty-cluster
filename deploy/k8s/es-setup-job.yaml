@@ -14,7 +14,8 @@ spec:
       labels: { app.kubernetes.io/name: es-setup }
     spec:
       restartPolicy: OnFailure
-      securityContext: { runAsNonRoot: true }
+      # numeric uid: the image's `USER node` is name-based, which runAsNonRoot cannot verify
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000 }
       containers:
         - name: setup
           image: ghcr.io/anonymousminh/salty-cluster-api
