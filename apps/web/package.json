@@ -20,7 +20,8 @@
     "three": "0.186.1",
     "@react-three/rapier": "2.2.0",
     "ecctrl": "2.0.2",
-    "zustand": "5.0.14"
+    "zustand": "5.0.14",
+    "@dash0/sdk-web": "0.30.0"
   },
   "devDependencies": {
     "@types/react": "19.3.0",

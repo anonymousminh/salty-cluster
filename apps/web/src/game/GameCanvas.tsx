@@ -22,6 +22,7 @@ import { Beacon, GuideArrow, MeetupPoint } from './world/Markers';
 import { Scenery } from './world/Scenery';
 import { StormWall } from './world/StormWall';
 import { QUEST } from './theme';
+import { track } from '../telemetry';
 
 export interface GameCanvasProps {
   playerName: string;
@@ -41,7 +42,14 @@ export function GameCanvas(props: GameCanvasProps) {
   return (
     <KeyboardControls map={KEYBOARD_MAP}>
       <Canvas className="game-canvas" dpr={[1, dpr]} camera={{ fov: 50, near: 0.3, far: 400, position: [30, 26, 70] }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
-        <PerformanceMonitor onDecline={() => setDpr(1)} onIncline={() => setDpr(1.5)} />
+        <PerformanceMonitor
+          onDecline={({ fps }) => {
+            setDpr(1);
+            // Low-end devices: shows up in Dash0 next to web vitals, per browser/device.
+            track('fps_low', { fps: Math.round(fps) });
+          }}
+          onIncline={() => setDpr(1.5)}
+        />
         <Sky sunPosition={[80, 50, 40]} turbidity={3} rayleigh={0.6} mieCoefficient={0.004} />
         <fog attach="fog" args={['#cfe9f7', 70, 190]} />
         <hemisphereLight args={['#ffffff', '#86d97b', 1.0]} />

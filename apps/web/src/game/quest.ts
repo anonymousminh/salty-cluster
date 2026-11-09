@@ -4,6 +4,7 @@ import { api, ApiError } from './api';
 import { MOCK_CAREER_PROFILE, useMockQuest } from './questMock';
 import type { PlayerProfile } from '../lobby/profile';
 import { leaderboardName, toCareerProfile } from '../lobby/profile';
+import { track } from '../telemetry';
 
 export type CheckinOutcome = { ok: true; event: QuestEvent } | { ok: false; reason?: string; message: string };
 
@@ -70,8 +71,12 @@ export function useQuest({ profile }: { profile: PlayerProfile }): Quest {
       (b) => {
         setBooths(b);
         setMode('api');
+        track('game_mode', { mode: 'api' });
       },
-      () => setMode('offline'),
+      () => {
+        setMode('offline');
+        track('game_mode', { mode: 'offline' });
+      },
     );
   }, []);
 
@@ -122,6 +127,7 @@ export function useQuest({ profile }: { profile: PlayerProfile }): Quest {
       });
       session.current = s;
       saveSession(s);
+      track('player_joined', { has_role: !!p.role, on_leaderboard: p.showOnLeaderboard });
       await refresh().catch(() => undefined);
     },
     [mode, refresh],
@@ -141,9 +147,11 @@ export function useQuest({ profile }: { profile: PlayerProfile }): Quest {
         const company = booths.find((b) => b.id === boothId)?.company ?? '';
         const event: QuestEvent = { type: 'booth.visited', id: `v${++seq.current}`, at: Date.now(), boothId, company, base: r.base, bonus: r.bonus };
         setEvents((e) => [...e.slice(-9), event]);
+        track('booth_checkin', { booth: boothId, xp: r.xpGained, bonus: r.bonus });
         void refresh().catch(() => undefined);
         return { ok: true, event };
       } catch (err) {
+        track('booth_checkin_failed', { booth: boothId, reason: err instanceof ApiError ? (err.reason ?? err.code) : 'network' });
         if (err instanceof ApiError) return { ok: false, reason: err.reason ?? err.code, message: err.message };
         return { ok: false, message: 'Network problem. Try again.' };
       }

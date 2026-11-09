@@ -8,7 +8,7 @@ k8s events + pod metadata (k8sattributes) ─────────► Collect
 ```
 - Node bootstrap: [`packages/telemetry`](../packages/telemetry/src/index.ts), loaded before anything else in `apps/api/src/index.ts`.
 - Collector: [`deploy/k8s/collector-config.yaml`](../deploy/k8s/collector-config.yaml) in the cluster, [`otel/collector-local.yaml`](../otel/collector-local.yaml) locally.
-- Browser: [`apps/console/src/telemetry.ts`](../apps/console/src/telemetry.ts) (console; add the same to the game). Set `VITE_DASH0_ENDPOINT` / `VITE_DASH0_AUTH_TOKEN` (ingest-only token, it is public).
+- Browser: [`apps/web/src/telemetry.ts`](../apps/web/src/telemetry.ts) (game: also sends `game_mode`, `player_joined`, `booth_checkin`, `booth_checkin_failed` and `fps_low` events) and [`apps/console/src/telemetry.ts`](../apps/console/src/telemetry.ts). Set `VITE_DASH0_ENDPOINT` / `VITE_DASH0_AUTH_TOKEN` (ingest-only token, it is public).
 
 ## Traces
 Auto-instrumentation covers HTTP, Fastify and pino. The Elasticsearch client emits its own spans. One check-in:

@@ -87,6 +87,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@dash0/sdk-web':
+        specifier: 0.30.0
+        version: 0.30.0
       '@meetspace/venue':
         specifier: workspace:*
         version: link:../../packages/venue
