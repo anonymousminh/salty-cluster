@@ -1,0 +1,23 @@
+# Local collector: same pipeline as the cluster, minus Kubernetes receivers.
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+processors:
+  batch: {}
+  resource:
+    attributes:
+      - { key: deployment.environment.name, value: local, action: upsert }
+exporters:
+  debug: { verbosity: basic }
+  otlp/dash0:
+    endpoint: ${env:DASH0_OTLP_ENDPOINT}
+    headers:
+      Authorization: "Bearer ${env:DASH0_AUTH_TOKEN}"
+      Dash0-Dataset: salty-cluster
+service:
+  pipelines:
+    traces:  { receivers: [otlp], processors: [resource, batch], exporters: [debug, otlp/dash0] }
+    metrics: { receivers: [otlp], processors: [resource, batch], exporters: [debug, otlp/dash0] }
+    logs:    { receivers: [otlp], processors: [resource, batch], exporters: [debug, otlp/dash0] }

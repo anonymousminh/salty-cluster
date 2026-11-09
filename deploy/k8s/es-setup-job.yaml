@@ -1,0 +1,27 @@
+# Creates the indices and loads the booths. Argo CD runs it before each sync (PreSync hook).
+# Idempotent: existing indices are kept; booths are upserted with stable QR codes.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: es-setup
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: es-setup }
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: setup
+          image: ghcr.io/anonymousminh/salty-cluster-api
+          command: ["sh", "-c", "./node_modules/.bin/tsx scripts/setup-es.ts && ./node_modules/.bin/tsx scripts/seed.ts"]
+          envFrom: [{ secretRef: { name: salty-secrets } }]
+          env:
+            - { name: OTEL_SDK_DISABLED, value: "true" }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
