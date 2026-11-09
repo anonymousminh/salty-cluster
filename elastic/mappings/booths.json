@@ -1,0 +1,15 @@
+{
+  "mappings": {
+    "properties": {
+      "id":       { "type": "keyword" },
+      "slot_id":  { "type": "keyword" },
+      "company":  { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+      "color":    { "type": "keyword", "index": false },
+      "tagline":  { "type": "text" },
+      "hiring":   { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+      "tags":     { "type": "keyword" },
+      "location": { "type": "geo_point" },
+      "code":     { "type": "keyword" }
+    }
+  }
+}

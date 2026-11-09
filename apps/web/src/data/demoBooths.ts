@@ -363,10 +363,42 @@ export const DEMO_MOCK_ATTENDEES = [
   { id: 'att-20', name: 'Sam Park', avatar: '👨‍🔧', totalPoints: 10, boothsVisited: 0, demosCompleted: 0 },
 ];
 
-export function getDemoExperience(boothId: string): BoothDemoExperience | undefined {
-  return DEMO_EXPERIENCES.find((e) => e.boothId === boothId);
+export function getDemoExperience(boothId: string, slotId?: string): BoothDemoExperience | undefined {
+  // Try direct match first
+  let exp = DEMO_EXPERIENCES.find((e) => e.boothId === boothId);
+  if (exp) return exp;
+  // Try by slotId
+  if (slotId) {
+    const meta = DEMO_BOOTH_META.find((m) => m.slotId === slotId);
+    if (meta) {
+      exp = DEMO_EXPERIENCES.find((e) => e.boothId === meta.id);
+      if (exp) return exp;
+    }
+  }
+  // Try by index mapping for compatibility
+  return undefined;
 }
 
 export function getDemoBoothMeta(boothId: string): DemoBoothMeta | undefined {
-  return DEMO_BOOTH_META.find((m) => m.id === boothId);
+  let meta = DEMO_BOOTH_META.find((m) => m.id === boothId);
+  if (meta) return meta;
+  return undefined;
+}
+
+// Map demo experiences to work with any booth by position
+export function getDemoExperienceForBooth(booth: { id: string; slotId: string; company: string }, index?: number): BoothDemoExperience | undefined {
+  // Try to find by matching company/category
+  const metaByCompany = DEMO_BOOTH_META.find((m) => 
+    m.company.toLowerCase().includes(booth.company.toLowerCase()) || 
+    booth.company.toLowerCase().includes(m.company.toLowerCase().split(' ')[0])
+  );
+  if (metaByCompany) {
+    const exp = DEMO_EXPERIENCES.find((e) => e.boothId === metaByCompany.id);
+    if (exp) return exp;
+  }
+  // Use index if provided (first 8 booths get demos)
+  if (index !== undefined && index < DEMO_EXPERIENCES.length) {
+    return DEMO_EXPERIENCES[index];
+  }
+  return undefined;
 }

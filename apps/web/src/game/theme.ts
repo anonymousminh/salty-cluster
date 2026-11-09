@@ -24,6 +24,9 @@ export const QUEST = {
   you: '#f472b6',
   visited: '#94a3b8',
   route: '#22d3ee',
+  /** Battle-royale storm (outside the circle) and safe-zone edge. */
+  storm: '#ef4444',
+  zone: '#f8fafc',
 };
 
 /** Bright, toy-like park palette (original look). */

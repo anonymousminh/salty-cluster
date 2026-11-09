@@ -4,6 +4,7 @@ import {
   type Progress,
   type QuestEvent,
 } from '@meetspace/venue';
+import { useDemoStore } from '../demo/store';
 
 export const XP_PER_LEVEL = 100;
 
@@ -65,12 +66,32 @@ export function Toasts({ events }: { events: QuestEvent[] }) {
 /** Collapsible top-10 with the attendee's own row and the "underdog hunter" tag. */
 export function LeaderboardPanel({ leaderboard }: { leaderboard?: Leaderboard }) {
   const [open, setOpen] = useState(() => typeof window === 'undefined' || window.innerWidth > 640);
+  const demoStats = useDemoStore((s) => s.stats);
   if (!leaderboard) return null;
-  const hunter = leaderboard.entries.reduce<Leaderboard['entries'][number] | null>(
+  
+  // Enhance entries with demo data
+  const enhancedEntries = leaderboard.entries.map((e) => {
+    if (e.isMe) {
+      return {
+        ...e,
+        demosCompleted: demoStats.demosCompleted,
+        totalPoints: demoStats.totalPoints || e.xp,
+      };
+    }
+    return e;
+  });
+  
+  const enhancedMe = leaderboard.me ? {
+    ...leaderboard.me,
+    demosCompleted: demoStats.demosCompleted,
+    totalPoints: demoStats.totalPoints || leaderboard.me.xp,
+  } : undefined;
+  
+  const hunter = enhancedEntries.reduce<Leaderboard['entries'][number] | null>(
     (best, e) => (!best || e.bonusXp > best.bonusXp ? e : best),
     null,
   )?.name;
-  const meInTop = leaderboard.entries.some((e) => e.isMe);
+  const meInTop = enhancedEntries.some((e) => e.isMe);
   return (
     <div className={`hud-lb${open ? '' : ' closed'}`}>
       <button className="hud-lb__head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
@@ -79,13 +100,13 @@ export function LeaderboardPanel({ leaderboard }: { leaderboard?: Leaderboard })
       </button>
       {open && (
         <ol className="hud-lb__list">
-          {leaderboard.entries.map((e) => (
+          {enhancedEntries.map((e) => (
             <Row key={e.rank} e={e} hunter={e.name === hunter && e.bonusXp > 0} />
           ))}
-          {!meInTop && leaderboard.me && (
+          {!meInTop && enhancedMe && (
             <>
               <li className="hud-lb__gap">⋯</li>
-              <Row e={leaderboard.me} hunter={false} />
+              <Row e={enhancedMe} hunter={false} />
             </>
           )}
         </ol>
@@ -95,15 +116,18 @@ export function LeaderboardPanel({ leaderboard }: { leaderboard?: Leaderboard })
 }
 
 function Row({ e, hunter }: { e: Leaderboard['entries'][number]; hunter: boolean }) {
+  const totalPts = (e as any).totalPoints ?? e.xp;
+  const demos = (e as any).demosCompleted;
   return (
     <li className={`hud-lb__row${e.isMe ? ' me' : ''}${e.rank <= 3 ? ` top${e.rank}` : ''}`}>
       <span className="rank">{e.rank}</span>
       <span className="name">
+        {(e as any).avatar && <span style={{ marginRight: '4px' }}>{(e as any).avatar}</span>}
         {e.name}
         {hunter && <span className="hunter" title="Most underdog bonus XP">🔥 underdog hunter</span>}
       </span>
-      <span className="booths">{e.booths}🏁</span>
-      <span className="xp">{e.xp}</span>
+      <span className="booths" title="Booths visited">{e.booths}🏁{demos !== undefined ? `/${demos}🎯` : ''}</span>
+      <span className="xp">{totalPts}</span>
     </li>
   );
 }

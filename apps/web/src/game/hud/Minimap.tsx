@@ -1,4 +1,4 @@
-import { WORLD, getBoothSlot, isBounty, type Booth, type BoothStats, type Vec2 } from '@meetspace/venue';
+import { WORLD, getBoothSlot, isBounty, type Booth, type BoothStats, type Circle, type Vec2 } from '@meetspace/venue';
 import { useGame } from '../store';
 import { QUEST, WORLD_COLORS, ZONE_TINT } from '../theme';
 
@@ -7,10 +7,13 @@ interface Props {
   boothStats: BoothStats;
   visited: Set<string>;
   target: Vec2 | null;
+  /** Battle-royale safe zone, and the booths inside it. */
+  circle?: Circle | null;
+  zone?: Set<string> | null;
 }
 
 /** Whole-park minimap: zones, paths, booths (bounties as gold diamonds), meetup points, you + view direction. */
-export function Minimap({ booths, boothStats, visited, target }: Props) {
+export function Minimap({ booths, boothStats, visited, target, circle, zone }: Props) {
   const pos = useGame((s) => s.playerPos);
   const heading = useGame((s) => s.cameraHeadingDeg);
   const [w, d] = WORLD.size;
@@ -33,6 +36,18 @@ export function Minimap({ booths, boothStats, visited, target }: Props) {
               <circle key={o.id} cx={o.at[0]} cy={o.at[1]} r={o.radius} fill={WORLD_COLORS.water} />
             ),
           )}
+        {circle && (
+          <>
+            <defs>
+              <mask id="minimap-storm">
+                <rect x={-w / 2} y={-d / 2} width={w} height={d} fill="#fff" />
+                <circle cx={circle.center[0]} cy={circle.center[1]} r={circle.radius} fill="#000" />
+              </mask>
+            </defs>
+            <rect x={-w / 2} y={-d / 2} width={w} height={d} fill={QUEST.storm} opacity={0.35} mask="url(#minimap-storm)" />
+            <circle cx={circle.center[0]} cy={circle.center[1]} r={circle.radius} fill="none" stroke={QUEST.zone} strokeWidth={0.8} />
+          </>
+        )}
         {WORLD.spots.map((s) => (
           <circle key={s.id} cx={s.anchor[0]} cy={s.anchor[1]} r={1.2} fill={QUEST.meetup} />
         ))}
@@ -40,12 +55,13 @@ export function Minimap({ booths, boothStats, visited, target }: Props) {
           const slot = getBoothSlot(b.slotId);
           if (!slot) return null;
           const v = visited.has(b.id);
-          const bounty = !v && isBounty(boothStats[b.id]);
+          const storm = !!zone && !zone.has(b.id);
+          const bounty = !v && !storm && isBounty(boothStats[b.id]);
           const [x, z] = slot.anchor;
           return bounty ? (
             <rect key={b.id} x={x - 1.4} y={z - 1.4} width={2.8} height={2.8} transform={`rotate(45 ${x} ${z})`} fill={QUEST.bounty} stroke="#fff" strokeWidth={0.4} />
           ) : (
-            <circle key={b.id} cx={x} cy={z} r={1.5} fill={v ? QUEST.visited : b.color} stroke="#fff" strokeWidth={0.4} />
+            <circle key={b.id} cx={x} cy={z} r={1.5} fill={v || storm ? QUEST.visited : b.color} opacity={storm ? 0.6 : 1} stroke="#fff" strokeWidth={0.4} />
           );
         })}
         {target && <circle cx={target[0]} cy={target[1]} r={3} fill="none" stroke={QUEST.waypoint} strokeWidth={0.8} />}

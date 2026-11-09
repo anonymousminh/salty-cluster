@@ -11,7 +11,7 @@ import type { MotionState } from './character/Chibi';
 import { NameTag } from './world/NameTag';
 import { isInputLocked, useGame } from './store';
 import { useDemoStore } from './demo/store';
-import { getDemoExperience } from '../data/demoBooths';
+import { getDemoExperience, getDemoExperienceForBooth } from '../data/demoBooths';
 
 export const KEYBOARD_MAP = [
   { name: 'forward', keys: ['ArrowUp', 'KeyW'] },
@@ -100,8 +100,9 @@ export function Player({ color, name, booths, onTalk, onStartDemo }: PlayerProps
     // Talk/Demo (edge-triggered).
     const talk = k.talk || !!buttons.talk;
     if (talk && !talkLatch.current && near && !game.openBoothId && game.phase === 'playing') {
-      const demoExp = getDemoExperience(near.item.id);
-      if (demoExp && onStartDemo) {
+      const boothIndex = booths.findIndex((b) => b.id === near.item.id);
+      const demoExp = getDemoExperience(near.item.id, near.item.slotId) || getDemoExperienceForBooth(near.item, boothIndex >= 0 ? boothIndex : undefined);
+      if ((demoExp || (boothIndex >= 0 && boothIndex < 8)) && onStartDemo) {
         onStartDemo(near.item.id);
       } else {
         onTalk(near.item.id);

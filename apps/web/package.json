@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "echo \"(web) no unit tests yet; venue logic is tested in @meetspace/venue\""
+    "test": "echo \"(web) no unit tests yet; venue logic is tested in @meetspace/venue\"",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@meetspace/venue": "workspace:*",
@@ -19,7 +20,8 @@
     "three": "0.186.1",
     "@react-three/rapier": "2.2.0",
     "ecctrl": "2.0.2",
-    "zustand": "5.0.14"
+    "zustand": "5.0.14",
+    "@dash0/sdk-web": "0.30.0"
   },
   "devDependencies": {
     "@types/react": "19.3.0",
@@ -27,6 +29,8 @@
     "@types/three": "0.186.0",
     "@vitejs/plugin-react": "4.3.4",
     "typescript": "5.6.3",
-    "vite": "5.4.11"
+    "vite": "5.4.11",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.9.0"
   }
 }

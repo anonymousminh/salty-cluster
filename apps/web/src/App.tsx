@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { boothFront, getBoothSlot, getSpot, isBounty, type Vec2 } from '@meetspace/venue';
 import { GameCanvas } from './game/GameCanvas';
 import { GameHud, resolveTarget } from './game/hud/GameHud';
 import { formatTime, mockSuggest, useMockAvailability, type SpotSuggestion } from './game/mock';
-import { useMockQuest } from './game/questMock';
+import { useQuest } from './game/quest';
 import { useGame } from './game/store';
 import { Lobby } from './lobby/Lobby';
-import { EMPTY_PROFILE, leaderboardName, loadProfile, saveProfile, toCareerProfile, type PlayerProfile } from './lobby/profile';
+import { EMPTY_PROFILE, loadProfile, saveProfile, toCareerProfile, type PlayerProfile } from './lobby/profile';
 import './app.css';
 import { DemoExperience } from './game/demo/DemoExperience';
 import { DemoQuiz } from './game/demo/DemoQuiz';
@@ -43,11 +43,13 @@ export function App() {
   const teleport = useGame((s) => s.teleport);
   const waypoint = useGame((s) => s.waypoint);
   const playerPos = useGame((s) => s.playerPos);
+  const startDemo = useDemoStore((s) => s.startDemo);
+  const toggleAdminPanel = useDemoStore((s) => s.toggleAdminPanel);
 
   const [profile, setProfile] = useState<PlayerProfile>(() => (skipLobby || demo === 'enter' ? DEMO_PROFILE : loadProfile() ?? EMPTY_PROFILE));
   const [welcome, setWelcome] = useState(false);
   const [drawer, setDrawer] = useState(false);
-  const quest = useMockQuest({ myName: leaderboardName(profile) });
+  const quest = useQuest({ profile });
   const availability = useMockAvailability(6000);
   const [suggestions, setSuggestions] = useState<SpotSuggestion[]>([]);
   const [confirmed, setConfirmed] = useState(false);
@@ -55,13 +57,16 @@ export function App() {
   const enter = (p: PlayerProfile) => {
     saveProfile(p);
     setProfile(p);
+    // Registers the player with the API (no-op offline). The game starts right away either way.
+    void quest.join(p).catch(() => undefined);
     setPhase('playing');
     setWelcome(true);
     window.setTimeout(() => setWelcome(false), 6000);
   };
 
+  const zone = quest.game ? new Set(quest.game.inZoneBoothIds) : null;
   const bounties = quest.booths
-    .filter((b) => !quest.progress.visitedBoothIds.includes(b.id) && isBounty(quest.boothStats[b.id]))
+    .filter((b) => !quest.progress.visitedBoothIds.includes(b.id) && (!zone || zone.has(b.id)) && isBounty(quest.boothStats[b.id]))
     .map((b) => ({ b, at: getBoothSlot(b.slotId)?.anchor ?? ([0, 0] as Vec2) }))
     .sort((x, y) => Math.hypot(x.at[0] - playerPos[0], x.at[1] - playerPos[1]) - Math.hypot(y.at[0] - playerPos[0], y.at[1] - playerPos[1]))
     .map(({ b }) => b);
@@ -90,16 +95,35 @@ export function App() {
     setPhase('playing');
     const t = window.setTimeout(() => {
       if (demo === 'match') simulateMatch();
-      if (demo === 'booth' && bounties[0]) {
-        const b = bounties[0];
-        setWaypoint({ kind: 'booth', id: b.id });
-        teleport(boothFront(getBoothSlot(b.slotId)!));
-        window.setTimeout(() => openBooth(b.id), 800);
-      }
     }, 1200);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ?demo=booth: once real stats are in (API or offline), stand at the nearest bounty booth.
+  const demoBoothDone = useRef(false);
+  useEffect(() => {
+    if (demo !== 'booth' || demoBoothDone.current || quest.mode === 'connecting') return;
+    if (quest.mode === 'api' && (!quest.game || Object.keys(quest.boothStats).length === 0)) return;
+    // Nearest bounty, else the best-paying unvisited booth inside the zone.
+    const b =
+      bounties[0] ??
+      quest.booths
+        .filter((x) => !quest.progress.visitedBoothIds.includes(x.id) && (!zone || zone.has(x.id)))
+        .sort((x, y) => (quest.boothStats[y.id]?.bonus ?? 0) - (quest.boothStats[x.id]?.bonus ?? 0))[0];
+    if (!b) return;
+    demoBoothDone.current = true;
+    setWaypoint({ kind: 'booth', id: b.id });
+    teleport(boothFront(getBoothSlot(b.slotId)!));
+    window.setTimeout(() => openBooth(b.id), 800);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quest.mode, quest.boothStats, quest.game]);
+
+  // Once the API answers, make sure a player who is already in the park is registered.
+  useEffect(() => {
+    if (quest.mode === 'api' && phase === 'playing') void quest.join(profile).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quest.mode, phase]);
 
   const spot = waypoint?.kind === 'spot' ? getSpot(waypoint.id) : undefined;
   const slotTime = suggestions.find((s) => s.spotId === waypoint?.id)?.startsAt;
@@ -113,6 +137,7 @@ export function App() {
         boothStats={quest.boothStats}
         visitedBoothIds={quest.progress.visitedBoothIds}
         availability={availability}
+        game={quest.game}
         onTalk={(id) => openBooth(id)}
       />
 
@@ -127,10 +152,14 @@ export function App() {
             leaderboard={quest.leaderboard}
             events={quest.events}
             careerProfile={toCareerProfile(profile)}
-            onCheckIn={(id) => {
-              quest.checkIn(id);
-              if (useGame.getState().waypoint?.id === id) setWaypoint(null);
-              window.setTimeout(() => openBooth(null), 1400);
+            game={quest.game}
+            onCheckIn={async (id, quizAnswer, dwellMs) => {
+              const outcome = await quest.checkIn(id, quizAnswer, dwellMs);
+              if (outcome.ok) {
+                if (useGame.getState().waypoint?.id === id) setWaypoint(null);
+                window.setTimeout(() => openBooth(null), 1400);
+              }
+              return outcome;
             }}
           />
 
@@ -146,8 +175,17 @@ export function App() {
             </button>
             {drawer && (
               <div className="app-drawer__body">
+                <div className="app-drawer__mode">
+                  {quest.mode === 'api' ? '🟢 Live game server' : quest.mode === 'connecting' ? '… Connecting' : '⚪ Offline demo (mock data)'}
+                </div>
                 <button className="primary" onClick={simulateMatch}>
                   💜 Simulate match with Sarah
+                </button>
+                <button className="primary" onClick={() => startDemo('booth-demo-test', quest.booths[0])}>
+                  🎮 Start Demo Experience
+                </button>
+                <button onClick={toggleAdminPanel}>
+                  ⚙️ Admin/Demo Panel
                 </button>
                 <button onClick={() => bounties[0] && setWaypoint({ kind: 'booth', id: bounties[0].id })} disabled={bounties.length === 0}>
                   ◆ Waypoint: nearest bounty ({bounties.length})

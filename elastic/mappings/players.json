@@ -1,0 +1,13 @@
+{
+  "mappings": {
+    "properties": {
+      "name":                { "type": "keyword" },
+      "role":                { "type": "keyword" },
+      "looking_for":         { "type": "keyword" },
+      "skills":              { "type": "keyword" },
+      "color":               { "type": "keyword", "index": false },
+      "show_on_leaderboard": { "type": "boolean" },
+      "created_at":          { "type": "date" }
+    }
+  }
+}

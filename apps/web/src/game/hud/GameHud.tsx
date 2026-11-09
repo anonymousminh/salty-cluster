@@ -9,6 +9,7 @@ import {
   type Booth,
   type BoothStats,
   type CareerProfile,
+  type GameView,
   type Leaderboard,
   type Progress,
   type QuestEvent,
@@ -19,9 +20,11 @@ import { BoothDialog } from './BoothDialog';
 import { CompassBar, type CompassMarker } from './CompassBar';
 import { Minimap } from './Minimap';
 import { LeaderboardPanel, Toasts, XpBar } from './Panels';
+import { ZoneBanner } from './ZoneBanner';
+import type { CheckinOutcome } from '../quest';
 import './hud.css';
 import { useDemoStore } from '../demo/store';
-import { getDemoExperience } from '../../data/demoBooths';
+import { getDemoExperience, getDemoExperienceForBooth } from '../../data/demoBooths';
 
 export interface GameHudProps {
   booths: Booth[];
@@ -30,11 +33,15 @@ export interface GameHudProps {
   leaderboard?: Leaderboard;
   events: QuestEvent[];
   careerProfile?: CareerProfile;
-  onCheckIn: (boothId: string) => void;
+  /** Battle-royale circle (null when playing offline). */
+  game?: GameView | null;
+  onCheckIn: (boothId: string, quizAnswer: number, dwellMs: number) => Promise<CheckinOutcome>;
 }
 
 /** Everything drawn over the 3D world while playing. */
-export function GameHud({ booths, boothStats, progress, leaderboard, events, careerProfile, onCheckIn }: GameHudProps) {
+export function GameHud({ booths, boothStats, progress, leaderboard, events, careerProfile, game, onCheckIn }: GameHudProps) {
+  const zone = useMemo(() => (game ? new Set(game.inZoneBoothIds) : null), [game]);
+  const inStorm = (id: string) => !!zone && !zone.has(id);
   const pos = useGame((s) => s.playerPos);
   const waypoint = useGame((s) => s.waypoint);
   const nearBoothId = useGame((s) => s.nearBoothId);
@@ -57,7 +64,7 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
   const markers: CompassMarker[] = [];
   if (target) markers.push({ id: 'wp', at: target.at, kind: 'waypoint', label: target.name });
   booths
-    .filter((b) => !visited.has(b.id) && isBounty(boothStats[b.id]) && b.id !== waypoint?.id)
+    .filter((b) => !visited.has(b.id) && !inStorm(b.id) && isBounty(boothStats[b.id]) && b.id !== waypoint?.id)
     .map((b) => ({ b, at: getBoothSlot(b.slotId)?.anchor }))
     .filter((x): x is { b: Booth; at: Vec2 } => !!x.at)
     .sort((a, b) => dist(a.at, pos) - dist(b.at, pos))
@@ -79,7 +86,8 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
           </button>
         </div>
       )}
-      <Minimap booths={booths} boothStats={boothStats} visited={visited} target={target?.at ?? null} />
+      {game && <ZoneBanner game={game} />}
+      <Minimap booths={booths} boothStats={boothStats} visited={visited} target={target?.at ?? null} circle={game?.state.circle ?? null} zone={zone} />
       <LeaderboardPanel leaderboard={leaderboard} />
       <Toasts events={events} />
 
@@ -87,15 +95,17 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
         <div className="hud-arrived">📍 You made it to {getSpot(arrivedSpotId)?.name}! Your match is on the way.</div>
       )}
 
+<<<<<<< HEAD
       {nearBooth && !open && (() => {
-        const demoExp = getDemoExperience(nearBooth.id);
+        const boothIndex = booths.findIndex((b) => b.id === nearBooth.id);
+        const demoExp = getDemoExperience(nearBooth.id) || getDemoExperienceForBooth(nearBooth, boothIndex >= 0 ? boothIndex : undefined);
         const visited = isBoothVisited(nearBooth.id);
         const completed = isBoothCompleted(nearBooth.id);
-        if (demoExp) {
+        if (demoExp || (boothIndex >= 0 && boothIndex < 8)) {
           return (
-            <button className="hud-prompt" onClick={() => startDemo(nearBooth.id)}>
+            <button className="hud-prompt" onClick={() => startDemo(nearBooth.id, nearBooth)}>
               <kbd>{touch ? 'TAP' : 'E'}</kbd> {completed ? 'Replay' : visited ? 'Continue'} Demo: <b>{nearBooth.company}</b>
-              {!completed && <span className="xp">+110 XP</span>}
+              {!completed && <span className="xp">+135 XP</span>}
               {completed && <span className="xp">✓ Completed</span>}
             </button>
           );
@@ -107,6 +117,15 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
           </button>
         );
       })()}
+=======
+      {nearBooth && !open && (
+        <button className="hud-prompt" onClick={() => openBooth(nearBooth.id)}>
+          <kbd>{touch ? 'TAP' : 'E'}</kbd> Talk to <b>{nearBooth.company}</b>
+          {!visited.has(nearBooth.id) &&
+            (inStorm(nearBooth.id) ? <span className="xp storm">storm · 0 XP</span> : <span className="xp">+{BASE_XP + (boothStats[nearBooth.id]?.bonus ?? 0)} XP</span>)}
+        </button>
+      )}
+>>>>>>> origin/main
 
       {open && (
         <BoothDialog
@@ -115,9 +134,8 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
           stat={boothStats[open.id]}
           visited={visited.has(open.id)}
           profile={careerProfile}
-          onCheckIn={(id) => {
-            onCheckIn(id);
-          }}
+          inStorm={inStorm(open.id)}
+          onCheckIn={onCheckIn}
           onClose={() => openBooth(null)}
         />
       )}

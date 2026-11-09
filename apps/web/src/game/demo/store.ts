@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { DemoProgressEntry, PlayerDemoStats, BoothDemoExperience } from '@meetspace/venue';
 import { demoPersistence, getDefaultDemoStats, createDefaultProgressEntry } from './persistence';
-import { DEMO_EXPERIENCES } from '../../data/demoBooths';
+import { DEMO_EXPERIENCES, getDemoExperienceForBooth, DEMO_BOOTH_META } from '../../data/demoBooths';
 import { DEFAULT_DEMO_POINTS_CONFIG } from '@meetspace/venue';
 
 export type DemoPhase = 'idle' | 'starting' | 'playing' | 'completed' | 'quiz' | 'finished';
@@ -17,7 +17,7 @@ export interface DemoState {
   showAdminPanel: boolean;
   
   // Actions
-  startDemo: (boothId: string) => boolean;
+  startDemo: (boothId: string, booth?: any) => boolean;
   markBoothVisited: (boothId: string) => void;
   completeDemo: () => void;
   answerQuiz: (answers: number[]) => { correct: boolean; pointsEarned: number };
@@ -67,8 +67,22 @@ export const useDemoStore = create<DemoState>((set, get) => {
     isDemoMode: false,
     showAdminPanel: false,
 
-    startDemo: (boothId: string) => {
-      const experience = DEMO_EXPERIENCES.find((e) => e.boothId === boothId);
+    startDemo: (boothId: string, booth?: any) => {
+      let experience = DEMO_EXPERIENCES.find((e) => e.boothId === boothId);
+      if (!experience) {
+        const idx = booth?.slotId ? DEMO_BOOTH_META.findIndex((m) => m.slotId === booth.slotId) : -1;
+        if (idx >= 0 && idx < DEMO_EXPERIENCES.length) experience = DEMO_EXPERIENCES[idx];
+        else if (booth) {
+          const exp2 = getDemoExperienceForBooth(booth);
+          if (exp2) experience = exp2;
+        }
+      }
+      if (!experience) {
+        // Assign demo based on boothId hash for consistency
+        let hash = 0;
+        for (let i = 0; i < boothId.length; i++) hash = (hash * 31 + boothId.charCodeAt(i)) >>> 0;
+        experience = DEMO_EXPERIENCES[hash % DEMO_EXPERIENCES.length];
+      }
       if (!experience) return false;
       
       const state = get();

@@ -3,9 +3,17 @@
   "private": true,
   "scripts": {
     "dev": "pnpm --filter @meetspace/web dev",
+    "dev:api": "pnpm --filter @meetspace/api dev",
+    "dev:memory": "pnpm --filter @meetspace/api dev:memory",
+    "dev:console": "pnpm --filter @meetspace/console dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
+    "e2e": "pnpm -r --workspace-concurrency=1 test:e2e",
+    "es:setup": "pnpm --filter @meetspace/api es:setup",
+    "seed": "pnpm --filter @meetspace/api seed",
+    "smoke": "pnpm --filter @meetspace/api smoke",
+    "simulate": "pnpm --filter @meetspace/api simulate",
     "venue:validate": "pnpm --filter @meetspace/venue validate"
   },
   "packageManager": "pnpm@11.18.0"
