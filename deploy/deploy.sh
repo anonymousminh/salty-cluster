@@ -149,6 +149,14 @@ cmd_elastic() {
   step "Elasticsearch"
   need_var ES_URL
   ES_URL="${ES_URL%/}"
+  if [ -z "${ES_API_KEY:-}" ] && [ -z "${ES_ADMIN_PASSWORD:-}" ]; then
+    # Elastic Cloud Serverless has no elastic/password: create the key in the UI instead.
+    printf '\n  Create a least-privilege API key in Kibana (Serverless: Project settings -> API keys -> Create API key):\n'
+    printf '    name: meetspace-api, turn on "Control security privileges", paste:\n\n'
+    printf '    {"meetspace":{"cluster":["monitor"],"indices":[{"names":%s,"privileges":["all"]}]}}\n\n' "$INDICES"
+    printf '  Copy the "Encoded" value into ES_API_KEY in %s, then re-run this step.\n' "$(basename "$ENV_FILE")"
+    die "ES_API_KEY is empty"
+  fi
   if [ -z "${ES_API_KEY:-}" ]; then
     need_var ES_ADMIN_USER ES_ADMIN_PASSWORD
     local body res key
