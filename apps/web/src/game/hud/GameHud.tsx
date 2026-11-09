@@ -95,16 +95,15 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
         <div className="hud-arrived">📍 You made it to {getSpot(arrivedSpotId)?.name}! Your match is on the way.</div>
       )}
 
-<<<<<<< HEAD
       {nearBooth && !open && (() => {
         const boothIndex = booths.findIndex((b) => b.id === nearBooth.id);
         const demoExp = getDemoExperience(nearBooth.id) || getDemoExperienceForBooth(nearBooth, boothIndex >= 0 ? boothIndex : undefined);
-        const visited = isBoothVisited(nearBooth.id);
+        const demoVisited = isBoothVisited(nearBooth.id);
         const completed = isBoothCompleted(nearBooth.id);
         if (demoExp || (boothIndex >= 0 && boothIndex < 8)) {
           return (
             <button className="hud-prompt" onClick={() => startDemo(nearBooth.id, nearBooth)}>
-              <kbd>{touch ? 'TAP' : 'E'}</kbd> {completed ? 'Replay' : visited ? 'Continue'} Demo: <b>{nearBooth.company}</b>
+              <kbd>{touch ? 'TAP' : 'E'}</kbd> {completed ? 'Replay' : demoVisited ? 'Continue' : 'Start'} Demo: <b>{nearBooth.company}</b>
               {!completed && <span className="xp">+135 XP</span>}
               {completed && <span className="xp">✓ Completed</span>}
             </button>
@@ -113,19 +112,11 @@ export function GameHud({ booths, boothStats, progress, leaderboard, events, car
         return (
           <button className="hud-prompt" onClick={() => openBooth(nearBooth.id)}>
             <kbd>{touch ? 'TAP' : 'E'}</kbd> Talk to <b>{nearBooth.company}</b>
-            {!visited.has(nearBooth.id) && <span className="xp">+{BASE_XP + (boothStats[nearBooth.id]?.bonus ?? 0)} XP</span>}
+            {!visited.has(nearBooth.id) &&
+              (inStorm(nearBooth.id) ? <span className="xp storm">storm · 0 XP</span> : <span className="xp">+{BASE_XP + (boothStats[nearBooth.id]?.bonus ?? 0)} XP</span>)}
           </button>
         );
       })()}
-=======
-      {nearBooth && !open && (
-        <button className="hud-prompt" onClick={() => openBooth(nearBooth.id)}>
-          <kbd>{touch ? 'TAP' : 'E'}</kbd> Talk to <b>{nearBooth.company}</b>
-          {!visited.has(nearBooth.id) &&
-            (inStorm(nearBooth.id) ? <span className="xp storm">storm · 0 XP</span> : <span className="xp">+{BASE_XP + (boothStats[nearBooth.id]?.bonus ?? 0)} XP</span>)}
-        </button>
-      )}
->>>>>>> origin/main
 
       {open && (
         <BoothDialog

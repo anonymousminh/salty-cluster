@@ -44,7 +44,8 @@ export function DemoExperience() {
   if (demoPhase !== 'playing' || !activeExperience) return null;
 
   const slides = activeExperience.slides;
-  const slide = slides[currentSlide] || slides[0];
+  const slide = slides[currentSlide] ?? slides[0];
+  if (!slide) return null;
 
   const handleSkip = useCallback(() => {
     completeDemo();
