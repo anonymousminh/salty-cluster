@@ -5,16 +5,16 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: app
-  namespace: team-__TEAM__
+  namespace: team-salty-cluster
 spec:
-  project: team-__TEAM__
+  project: team-salty-cluster
   source:
     repoURL: https://github.com/anonymousminh/salty-cluster.git
     targetRevision: main
     path: deploy/cnh
   destination:
     server: https://kubernetes.default.svc
-    namespace: team-__TEAM__
+    namespace: team-salty-cluster
   syncPolicy:
     automated:
       prune: true

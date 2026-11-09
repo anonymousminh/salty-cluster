@@ -5,7 +5,7 @@
 # hackathon cluster needs.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: team-__TEAM__
+namespace: team-salty-cluster
 resources:
   - ../k8s
   # The platform routes https://<team>.cnh.radarhq.io to Service "app", port 80.

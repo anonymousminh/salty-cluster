@@ -10,16 +10,16 @@ Product and architecture: `README.md`. Hosting: `docs/deployment-guide.md`.
 
 ## Where it runs (Cloud Native Hackathon)
 
-The team's cluster is a vcluster that Radar Cloud lists as **`__TEAM__`**. The app runs in namespace `team-__TEAM__` and is public at `https://__TEAM__.cnh.radarhq.io`:
+The team's cluster is a vcluster that Radar Cloud lists as **`salty-cluster`**. The app runs in namespace `team-salty-cluster` and is public at `https://salty-cluster.cnh.radarhq.io`:
 - the 3D game is at `/`
 - the console is at `/console/`
 - the API is at `/api`
 
-If the name in bold is still a placeholder (`__TEAM__`), run `./deploy/deploy.sh cnh-setup <team>` first.
+If the name in bold is still a placeholder (`salty-cluster`), run `./deploy/deploy.sh cnh-setup <team>` first.
 
 **Radar.** Use Radar Cloud's MCP server (`radar-cloud`) to observe and change the cluster.
-- Call `list_clusters` once per session, take the `id` whose `name` is exactly `__TEAM__`, and pass it as `cluster` on every call. The organization has about 40 clusters. Never touch `cnh` or another team's cluster.
-- Pass `namespace: team-__TEAM__`.
+- Call `list_clusters` once per session, take the `id` whose `name` is exactly `salty-cluster`, and pass it as `cluster` on every call. The organization has about 40 clusters. Never touch `cnh` or another team's cluster.
+- Pass `namespace: team-salty-cluster`.
 
 **What runs there** (all from git, `deploy/cnh` → `deploy/k8s`):
 
@@ -38,12 +38,12 @@ Elasticsearch is Elastic Cloud (Serverless), outside the cluster. If `api` is no
 Deploys are GitOps:
 1. Change the repo, open a PR, and merge to `main` after CI is green.
 2. CI builds `ghcr.io/anonymousminh/salty-cluster-{api,web}`, then commits `deploy: <sha> [skip ci]`, which pins `newTag` in `deploy/k8s/kustomization.yaml`.
-3. Argo CD Application `app` in `team-__TEAM__` (project `team-__TEAM__`) syncs it.
+3. Argo CD Application `app` in `team-salty-cluster` (project `team-salty-cluster`) syncs it.
 
 After a merge:
 - Wait for the deploy commit.
 - Check the Application's synced revision, then the rollout of `api` and `web`.
-- Then `https://__TEAM__.cnh.radarhq.io/api/game`.
+- Then `https://salty-cluster.cnh.radarhq.io/api/game`.
 
 Argo CD has no web UI here: use `manage_gitops`. Never patch Argo CD-owned resources on the cluster: self-heal reverts them. Fix them in git.
 
@@ -58,7 +58,7 @@ Argo CD has no web UI here: use `manage_gitops`. Never patch Argo CD-owned resou
 
 - **Budget for everything in the cluster:** 2 CPU / 4 GiB of requests, 4 CPU / 8 GiB of limits, 4 PVCs / 20 GiB. The api HPA is capped at 3 to fit.
 - No privileged, hostPath, hostNetwork or hostPID pods. No LoadBalancer or NodePort Services.
-- Leave the pre-installed platform alone: Argo CD, Argo Rollouts, Prometheus, CloudNativePG, Radar 1.19 (don't upgrade it), AppProject `team-__TEAM__`, Secret `default/kubeconfig`.
+- Leave the pre-installed platform alone: Argo CD, Argo Rollouts, Prometheus, CloudNativePG, Radar 1.19 (don't upgrade it), AppProject `team-salty-cluster`, Secret `default/kubeconfig`.
 - **Never** put a kubeconfig, token or API key in the repo, a commit, a log or your output. The repo and images are public.
 
 ## Load and demo traffic
