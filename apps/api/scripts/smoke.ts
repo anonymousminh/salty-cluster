@@ -18,6 +18,22 @@ async function main() {
   const config = loadConfig();
   const app = buildApp({ es: createEsClient(config), config, logger: false });
   const org = { 'x-organizer-token': config.organizerToken };
+  /**
+   * Searches see writes after the next refresh (about 1 s on hosted clusters, longer on Serverless),
+   * like a polling client would. Retry an assertion until it holds or 60 s pass.
+   */
+  const eventually = async (what: string, check: () => Promise<void>) => {
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      try {
+        return await check();
+      } catch (err) {
+        if (Date.now() > deadline) throw new Error(`${what} never became true: ${(err as Error).message}`);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  };
+
   const call = async (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object, headers?: Record<string, string>) => {
     const res = await app.inject({ method, url, payload, headers });
     return { status: res.statusCode, body: res.json() };
@@ -54,14 +70,20 @@ async function main() {
   const outside = booths.find((b) => !zone.includes(b.id))!;
   assert.equal((await checkin(bob, outside)).body.reason, 'in_storm');
 
+  // Wait until both visits to b0 are searchable, so b2 is "below average" for the bonus maths.
+  await eventually('visits visible', async () => {
+    assert.equal((await call('GET', '/api/booths/stats')).body[b0.id].visits, 2);
+  });
   // Grow the zone to everything: a quiet booth now pays an underdog bonus (aggregation).
   await call('PUT', '/api/organizer/circle', { center: [0, 0], radius: 75 }, org);
   const quiet = await checkin(bob, b2);
   assert.ok(quiet.body.bonus > 0, `expected underdog bonus, got ${JSON.stringify(quiet.body)}`);
 
-  const lb = (await call('GET', '/api/leaderboard', undefined, { authorization: `Bearer ${alice}` })).body;
-  assert.equal(lb.entries[0].name, 'Bob');
-  assert.equal(lb.me.name, 'Alice');
+  await eventually('leaderboard', async () => {
+    const lb = (await call('GET', '/api/leaderboard', undefined, { authorization: `Bearer ${alice}` })).body;
+    assert.equal(lb.entries[0]?.name, 'Bob');
+    assert.equal(lb.me?.name, 'Alice');
+  });
   const stats = (await call('GET', '/api/booths/stats')).body;
   assert.equal(stats[b0.id].visits, 2);
   assert.equal(stats[b1.id].visits, 0);
@@ -73,9 +95,11 @@ async function main() {
   assert.equal(after.circle.radius, 37.5);
   assert.equal(after.round, 2);
 
-  const ostats = (await call('GET', '/api/organizer/stats', undefined, org)).body;
-  assert.equal(ostats.checkins, 3);
-  assert.equal(ostats.players, 2);
+  await eventually('organizer stats', async () => {
+    const ostats = (await call('GET', '/api/organizer/stats', undefined, org)).body;
+    assert.equal(ostats.checkins, 3);
+    assert.equal(ostats.players, 2);
+  });
 
   await app.close();
   console.log('✓ smoke test passed against real Elasticsearch');
