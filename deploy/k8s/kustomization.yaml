@@ -13,8 +13,10 @@ configMapGenerator:
   - name: otel-collector-config
     files:
       - config.yaml=collector-config.yaml
+# CI pushes :main and :sha-<commit> on every merge to main. For a reproducible deploy, open a PR
+# that sets newTag to that commit's sha tag (docs/deployment-guide.md, "Deploy a new version").
 images:
   - name: ghcr.io/anonymousminh/salty-cluster-api
-    newTag: "0.1.0"
+    newTag: main
   - name: ghcr.io/anonymousminh/salty-cluster-web
-    newTag: "0.1.0"
+    newTag: main
