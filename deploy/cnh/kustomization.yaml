@@ -11,8 +11,9 @@ resources:
   # The platform routes https://<team>.cnh.radarhq.io to Service "app", port 80.
   - service-app.yaml
 patches:
-  # Budget: 4 CPU of limits for everything. api 3 x 500m + web 2 x 200m + collector 500m + setup job
-  # 500m = 2.9 CPU, which leaves room for a rolling update's extra pod.
+  # Budget: 4 CPU of limits for everything. api 3 x 500m + realtime 500m + web 2 x 200m + collector 500m
+  # + setup job 500m = 3.4 CPU, which still leaves room for a rolling update's extra api pod (realtime
+  # uses Recreate, so it never runs two pods at once).
   - target: { kind: HorizontalPodAutoscaler, name: api }
     patch: |-
       - op: replace

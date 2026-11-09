@@ -22,7 +22,8 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: realtime }
     spec:
-      securityContext: { runAsNonRoot: true }
+      # numeric uid: the image's `USER node` is name-based, which runAsNonRoot cannot verify (same as api.yaml)
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000 }
       terminationGracePeriodSeconds: 10
       containers:
         - name: realtime
@@ -36,8 +37,9 @@ spec:
           readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, initialDelaySeconds: 10 }
           resources:
-            requests: { cpu: 100m, memory: 256Mi }
-            limits: { cpu: "1", memory: 512Mi }
+            # Sized like an api pod: 800 simulated players used about 10 % of one core in testing, so 500m is ample headroom.
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { cpu: 500m, memory: 384Mi }
 ---
 apiVersion: v1
 kind: Service
